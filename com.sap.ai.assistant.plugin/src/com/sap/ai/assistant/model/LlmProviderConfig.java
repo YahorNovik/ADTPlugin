@@ -26,12 +26,12 @@ public class LlmProviderConfig {
                     "o1-mini",
                     "o3-mini"
                 }),
-        GOOGLE("Google", "gemini-2.0-flash", "https://generativelanguage.googleapis.com",
+        GOOGLE("Google", "gemini-2.5-flash", "https://generativelanguage.googleapis.com",
                 new String[]{
+                    "gemini-2.5-flash",
+                    "gemini-2.5-pro",
                     "gemini-2.0-flash",
-                    "gemini-2.0-pro",
-                    "gemini-1.5-pro",
-                    "gemini-1.5-flash"
+                    "gemini-2.0-flash-lite"
                 }),
         MISTRAL("Mistral", "mistral-large-latest", "https://api.mistral.ai",
                 new String[]{
