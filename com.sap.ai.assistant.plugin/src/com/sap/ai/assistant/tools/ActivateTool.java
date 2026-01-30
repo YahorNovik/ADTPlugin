@@ -71,7 +71,7 @@ public class ActivateTool extends AbstractSapTool {
                 "/sap/bc/adt/activation",
                 xmlBody,
                 "application/xml",
-                "application/xml");
+                "application/xml,application/vnd.sap.adt.inactivectsobjects.v1+xml;q=0.9");
 
         JsonObject result = AdtXmlParser.parseActivationResult(response.body());
         return ToolResult.success(null, result.toString());

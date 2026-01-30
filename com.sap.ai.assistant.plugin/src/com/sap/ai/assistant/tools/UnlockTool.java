@@ -63,7 +63,9 @@ public class UnlockTool extends AbstractSapTool {
 
         String path = objectUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
 
-        HttpResponse<String> response = client.post(path, "", "application/xml", "application/xml");
+        HttpResponse<String> response = client.post(path, "",
+                "application/*",
+                "application/*");
 
         JsonObject output = new JsonObject();
         output.addProperty("status", "unlocked");

@@ -134,29 +134,46 @@ public class CreateObjectTool extends AbstractSapTool {
             path = path + "?corrNr=" + urlEncode(transport);
         }
 
-        HttpResponse<String> response = client.post(
-                path,
-                xmlBody,
-                "application/xml",
-                "application/xml");
+        try {
+            HttpResponse<String> response = client.post(
+                    path,
+                    xmlBody,
+                    "application/*",
+                    "application/*");
 
-        JsonObject output = new JsonObject();
-        output.addProperty("status", "created");
-        output.addProperty("name", name);
-        output.addProperty("type", objtype);
-        output.addProperty("statusCode", response.statusCode());
+            JsonObject output = new JsonObject();
+            output.addProperty("status", "created");
+            output.addProperty("name", name);
+            output.addProperty("type", objtype);
+            output.addProperty("statusCode", response.statusCode());
 
-        // Try to extract the object URL from the Location header
-        String location = response.headers()
-                .firstValue("Location")
-                .orElse(null);
-        if (location != null && !location.isEmpty()) {
-            output.addProperty("objectUrl", location);
-        } else {
-            output.addProperty("objectUrl", creationUrl + "/" + name.toLowerCase());
+            // Try to extract the object URL from the Location header
+            String location = response.headers()
+                    .firstValue("Location")
+                    .orElse(null);
+            if (location != null && !location.isEmpty()) {
+                output.addProperty("objectUrl", location);
+            } else {
+                output.addProperty("objectUrl", creationUrl + "/" + name.toLowerCase());
+            }
+
+            return ToolResult.success(null, output.toString());
+
+        } catch (java.io.IOException createEx) {
+            // If the object already exists, return a helpful message instead of an error
+            String msg = createEx.getMessage() != null ? createEx.getMessage() : "";
+            if (msg.contains("already exists")) {
+                JsonObject output = new JsonObject();
+                output.addProperty("status", "already_exists");
+                output.addProperty("name", name);
+                output.addProperty("type", objtype);
+                output.addProperty("objectUrl", creationUrl + "/" + name.toLowerCase());
+                output.addProperty("message",
+                        "Object '" + name + "' already exists. Use sap_write_and_check to modify it.");
+                return ToolResult.success(null, output.toString());
+            }
+            throw createEx;
         }
-
-        return ToolResult.success(null, output.toString());
     }
 
     private String buildCreationXml(String objtype, String name, String parentName,

@@ -186,21 +186,34 @@ public class WriteAndCheckTool extends AbstractSapTool {
                 createPath = createPath + "?corrNr=" + urlEncode(transport);
             }
 
-            HttpResponse<String> createResp = client.post(
-                    createPath, xmlBody, "application/xml", "application/xml");
+            try {
+                HttpResponse<String> createResp = client.post(
+                        createPath, xmlBody, "application/*", "application/*");
 
-            // Derive the object URL
-            String location = createResp.headers()
-                    .firstValue("Location").orElse(null);
-            if (location != null && !location.isEmpty()) {
-                objectUrl = location;
-            } else {
-                String baseUrl = TYPE_BASE_URL_MAP.get(objtype.toUpperCase());
-                if (baseUrl != null) {
-                    objectUrl = baseUrl + name.toLowerCase();
+                // Derive the object URL
+                String location = createResp.headers()
+                        .firstValue("Location").orElse(null);
+                if (location != null && !location.isEmpty()) {
+                    objectUrl = location;
+                } else {
+                    String baseUrl = TYPE_BASE_URL_MAP.get(objtype.toUpperCase());
+                    if (baseUrl != null) {
+                        objectUrl = baseUrl + name.toLowerCase();
+                    }
+                }
+                created = true;
+            } catch (java.io.IOException createEx) {
+                // If creation fails because object already exists, derive URL and continue
+                String msg = createEx.getMessage() != null ? createEx.getMessage() : "";
+                if (msg.contains("already exists") || msg.contains("HTTP 500")) {
+                    String baseUrl = TYPE_BASE_URL_MAP.get(objtype.toUpperCase());
+                    if (baseUrl != null) {
+                        objectUrl = baseUrl + name.toLowerCase();
+                    }
+                } else {
+                    throw createEx;
                 }
             }
-            created = true;
         }
 
         if (objectUrl == null || objectUrl.isEmpty()) {
@@ -239,7 +252,9 @@ public class WriteAndCheckTool extends AbstractSapTool {
         // ----------------------------------------------------------
         if (lockHandle == null || lockHandle.isEmpty()) {
             String lockPath = objectUrl + "?_action=LOCK&accessMode=MODIFY";
-            HttpResponse<String> lockResp = client.post(lockPath, "", "application/xml", "application/xml");
+            HttpResponse<String> lockResp = client.post(lockPath, "",
+                    "application/*",
+                    "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
             lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
 
             if (lockHandle == null || lockHandle.isEmpty()) {
