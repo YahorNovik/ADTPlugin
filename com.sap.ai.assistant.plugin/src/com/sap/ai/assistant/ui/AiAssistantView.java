@@ -420,7 +420,10 @@ public class AiAssistantView extends ViewPart {
                         errorDetail = e.getClass().getSimpleName();
                     }
                     if (e instanceof java.net.ConnectException) {
-                        errorDetail = "Connection failed. Check your network and API key settings.";
+                        String causeMsg = e.getCause() != null ? e.getCause().toString() : "";
+                        errorDetail = "Connection failed: " + e.getMessage()
+                                + (causeMsg.isEmpty() ? "" : " (" + causeMsg + ")")
+                                + ". Check your network connection and SAP system URL.";
                     }
                     final String msg = errorDetail;
                     display.asyncExec(() -> {

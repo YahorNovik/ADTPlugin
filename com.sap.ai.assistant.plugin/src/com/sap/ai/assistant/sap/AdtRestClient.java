@@ -108,6 +108,7 @@ public class AdtRestClient {
      */
     public void login() throws Exception {
         String url = buildUrl(DISCOVERY_PATH);
+        System.out.println("AdtRestClient: logging in to " + baseUrl + " ...");
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -119,7 +120,15 @@ public class AdtRestClient {
                 .GET()
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response;
+        try {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (java.net.ConnectException e) {
+            throw new java.net.ConnectException(
+                    "Cannot connect to SAP system at " + baseUrl
+                    + ". Verify the URL is correct and the system is reachable. "
+                    + "Original error: " + e.getMessage());
+        }
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IOException("Login failed with HTTP " + response.statusCode()
