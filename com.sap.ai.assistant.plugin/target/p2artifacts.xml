@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<?artifactRepository version='1.1.0'?>
+<artifacts size='1'>
+  <artifact classifier='osgi.bundle' id='com.sap.ai.assistant.plugin' version='1.0.0.202601301643'>
+    <properties size='9'>
+      <property name='artifact.size' value='458165'/>
+      <property name='download.size' value='458165'/>
+      <property name='download.checksum.sha-512' value='4897f7becb9a830410a1c8860f2ba5bd685f56e4480192890ef6135041e63619153c401ea743f11637b98ab88348987d3e1869125fb5962d356d1987b59f9b41'/>
+      <property name='download.checksum.sha-1' value='696c89ede39d55d17fed39b9d527e5e919352513'/>
+      <property name='download.checksum.sha-256' value='c4c1332df34aea7e3f4248bc5342b90b291f907fc0b5ae579ac2babe3a4ce79f'/>
+      <property name='maven-groupId' value='com.sap.ai.assistant'/>
+      <property name='maven-artifactId' value='com.sap.ai.assistant.plugin'/>
+      <property name='maven-version' value='1.0.0-SNAPSHOT'/>
+      <property name='maven-type' value='eclipse-plugin'/>
+    </properties>
+  </artifact>
+</artifacts>

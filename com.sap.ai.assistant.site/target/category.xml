@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+    <feature id="com.sap.ai.assistant.feature" version="0.0.0">
+        <category name="sap-ai-assistant"/>
+    </feature>
+    <category-def name="sap-ai-assistant" label="SAP AI Assistant">
+        <description>AI-powered assistant for SAP ABAP development in Eclipse ADT.</description>
+    </category-def>
+</site>
