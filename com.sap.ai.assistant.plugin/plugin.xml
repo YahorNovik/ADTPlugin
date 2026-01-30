@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+    <!-- AI Assistant Chat View -->
+    <extension point="org.eclipse.ui.views">
+        <category
+            id="com.sap.ai.assistant.category"
+            name="SAP AI Assistant">
+        </category>
+        <view
+            id="com.sap.ai.assistant.ui.AiAssistantView"
+            name="SAP AI Assistant"
+            class="com.sap.ai.assistant.ui.AiAssistantView"
+            category="com.sap.ai.assistant.category"
+            icon="icons/ai_assistant_16.png"
+            allowMultiple="false">
+        </view>
+    </extension>
+
+    <!-- Preferences Page -->
+    <extension point="org.eclipse.ui.preferencePages">
+        <page
+            id="com.sap.ai.assistant.preferences.AiAssistantPreferencePage"
+            name="SAP AI Assistant"
+            class="com.sap.ai.assistant.preferences.AiAssistantPreferencePage">
+        </page>
+    </extension>
+</plugin>

@@ -1,0 +1,25 @@
+# Build output
+**/target/
+**/bin/
+*.class
+
+# IDE
+.project
+.classpath
+.settings/
+*.launch
+.metadata/
+
+# Maven
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

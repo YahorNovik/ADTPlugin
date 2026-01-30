@@ -1,0 +1,30 @@
+package com.sap.ai.assistant.preferences;
+
+/**
+ * Preference keys for the AI Assistant plug-in settings.
+ * <p>
+ * These constants are shared between the preference page and any code that
+ * reads/writes the Eclipse preference store.
+ * </p>
+ */
+public final class PreferenceConstants {
+
+    /** The selected LLM provider name (e.g. "ANTHROPIC", "OPENAI"). */
+    public static final String LLM_PROVIDER = "com.sap.ai.assistant.llm.provider";
+
+    /** The API key for the selected LLM provider. */
+    public static final String LLM_API_KEY = "com.sap.ai.assistant.llm.apiKey";
+
+    /** The model identifier (e.g. "claude-sonnet-4-20250514", "gpt-4o"). */
+    public static final String LLM_MODEL = "com.sap.ai.assistant.llm.model";
+
+    /** Maximum number of response tokens (256 - 128 000). */
+    public static final String LLM_MAX_TOKENS = "com.sap.ai.assistant.llm.maxTokens";
+
+    /** Whether to include the current editor context in prompts. */
+    public static final String INCLUDE_CONTEXT = "com.sap.ai.assistant.includeContext";
+
+    private PreferenceConstants() {
+        // Utility class -- no instances
+    }
+}

@@ -1,0 +1,75 @@
+package com.sap.ai.assistant.tools;
+
+import java.net.http.HttpResponse;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.sap.ai.assistant.model.ToolDefinition;
+import com.sap.ai.assistant.model.ToolResult;
+import com.sap.ai.assistant.sap.AdtRestClient;
+import com.sap.ai.assistant.sap.AdtXmlParser;
+
+/**
+ * Tool: <b>sap_object_structure</b> -- Retrieve the metadata and
+ * structural information of an ABAP repository object (links, includes,
+ * etc.).
+ */
+public class ObjectStructureTool extends AbstractSapTool {
+
+    public static final String NAME = "sap_object_structure";
+
+    public ObjectStructureTool(AdtRestClient client) {
+        super(client);
+    }
+
+    @Override
+    public String getName() {
+        return NAME;
+    }
+
+    @Override
+    public ToolDefinition getDefinition() {
+        JsonObject urlProp = new JsonObject();
+        urlProp.addProperty("type", "string");
+        urlProp.addProperty("description",
+                "The ADT object URL (e.g. '/sap/bc/adt/programs/programs/ztest')");
+
+        JsonObject versionProp = new JsonObject();
+        versionProp.addProperty("type", "string");
+        versionProp.addProperty("description",
+                "Optional version: 'active', 'inactive', or 'workingArea'");
+
+        JsonObject properties = new JsonObject();
+        properties.add("objectUrl", urlProp);
+        properties.add("version", versionProp);
+
+        JsonArray required = new JsonArray();
+        required.add("objectUrl");
+
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "object");
+        schema.add("properties", properties);
+        schema.add("required", required);
+
+        return new ToolDefinition(NAME,
+                "Get the structure/metadata of an ABAP repository object including its links, includes, "
+                        + "and source URLs. Use this after sap_search_object to discover the source URL for reading/writing code.",
+                schema);
+    }
+
+    @Override
+    public ToolResult execute(JsonObject arguments) throws Exception {
+        String objectUrl = arguments.get("objectUrl").getAsString();
+        String version = optString(arguments, "version");
+
+        String path = objectUrl;
+        if (version != null && !version.isEmpty()) {
+            String separator = path.contains("?") ? "&" : "?";
+            path = path + separator + "version=" + urlEncode(version);
+        }
+
+        HttpResponse<String> response = client.get(path, "application/xml");
+        JsonObject structure = AdtXmlParser.parseObjectStructure(response.body());
+        return ToolResult.success(null, structure.toString());
+    }
+}
