@@ -25,7 +25,7 @@ public class SavedSapSystem {
     }
 
     public SavedSapSystem(String host, int port, String client, String user, boolean useSsl) {
-        this.host = host;
+        this.host = sanitizeHost(host);
         this.port = port;
         this.client = client;
         this.user = user;
@@ -59,11 +59,34 @@ public class SavedSapSystem {
     // -- Getters / Setters ---------------------------------------------------
 
     public String getHost() {
-        return host;
+        return sanitizeHost(host);
     }
 
     public void setHost(String host) {
-        this.host = host;
+        this.host = sanitizeHost(host);
+    }
+
+    /**
+     * Strip any protocol prefix and trailing path from a hostname.
+     */
+    private static String sanitizeHost(String h) {
+        if (h == null) return h;
+        if (h.startsWith("http://"))  h = h.substring(7);
+        if (h.startsWith("https://")) h = h.substring(8);
+        int slashIdx = h.indexOf('/');
+        if (slashIdx >= 0) h = h.substring(0, slashIdx);
+        // Strip port if embedded (host:port) — port is stored separately
+        int colonIdx = h.lastIndexOf(':');
+        if (colonIdx >= 0) {
+            String maybePart = h.substring(colonIdx + 1);
+            try {
+                Integer.parseInt(maybePart);
+                h = h.substring(0, colonIdx);
+            } catch (NumberFormatException ignored) {
+                // Not a port number, keep as-is
+            }
+        }
+        return h;
     }
 
     public int getPort() {

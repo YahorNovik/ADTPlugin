@@ -43,7 +43,19 @@ public class SapSystemConnection {
      */
     public String getBaseUrl() {
         String scheme = useSsl ? "https" : "http";
-        return scheme + "://" + host + ":" + port;
+        // Defensive: strip any protocol prefix that may have been stored in host
+        String cleanHost = host;
+        if (cleanHost.startsWith("http://")) {
+            cleanHost = cleanHost.substring(7);
+        } else if (cleanHost.startsWith("https://")) {
+            cleanHost = cleanHost.substring(8);
+        }
+        // Strip trailing slashes/paths
+        int slashIdx = cleanHost.indexOf('/');
+        if (slashIdx >= 0) {
+            cleanHost = cleanHost.substring(0, slashIdx);
+        }
+        return scheme + "://" + cleanHost + ":" + port;
     }
 
     // -- Getters / Setters -------------------------------------------------------
