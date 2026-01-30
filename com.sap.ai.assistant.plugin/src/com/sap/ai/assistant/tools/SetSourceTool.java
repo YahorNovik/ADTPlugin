@@ -1,8 +1,6 @@
 package com.sap.ai.assistant.tools;
 
 import java.net.http.HttpResponse;
-import java.util.HashMap;
-import java.util.Map;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -78,14 +76,14 @@ public class SetSourceTool extends AbstractSapTool {
         String lockHandle = arguments.get("lockHandle").getAsString();
         String transport = optString(arguments, "transport");
 
-        Map<String, String> extraHeaders = new HashMap<>();
-        extraHeaders.put("Lock-Handle", lockHandle);
+        // lockHandle and transport are query parameters per ADT API spec
+        String separator = objectSourceUrl.contains("?") ? "&" : "?";
+        String path = objectSourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
         if (transport != null && !transport.isEmpty()) {
-            extraHeaders.put("X-Transport", transport);
+            path = path + "&corrNr=" + urlEncode(transport);
         }
 
-        HttpResponse<String> response = client.putWithHeaders(
-                objectSourceUrl, source, "text/plain", extraHeaders);
+        HttpResponse<String> response = client.put(path, source, "text/plain; charset=utf-8");
 
         JsonObject output = new JsonObject();
         output.addProperty("status", "success");

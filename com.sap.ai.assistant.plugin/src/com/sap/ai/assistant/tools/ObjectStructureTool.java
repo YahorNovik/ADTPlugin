@@ -68,7 +68,7 @@ public class ObjectStructureTool extends AbstractSapTool {
             path = path + separator + "version=" + urlEncode(version);
         }
 
-        HttpResponse<String> response = client.get(path, "application/xml");
+        HttpResponse<String> response = client.get(path, "application/*");
         JsonObject structure = AdtXmlParser.parseObjectStructure(response.body());
         return ToolResult.success(null, structure.toString());
     }

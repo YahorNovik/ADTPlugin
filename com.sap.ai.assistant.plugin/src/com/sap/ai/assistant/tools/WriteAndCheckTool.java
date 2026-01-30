@@ -228,7 +228,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
         // Step 3: Get object structure to find source URL
         // ----------------------------------------------------------
         try {
-            HttpResponse<String> structResp = client.get(objectUrl, "application/xml");
+            HttpResponse<String> structResp = client.get(objectUrl, "application/*");
             String mainInclude = AdtXmlParser.extractMainInclude(structResp.body());
             if (mainInclude != null && !mainInclude.isEmpty()) {
                 // The main include URL may be relative to the object URL
@@ -265,15 +265,15 @@ public class WriteAndCheckTool extends AbstractSapTool {
         output.addProperty("lockHandle", lockHandle);
 
         // ----------------------------------------------------------
-        // Step 5: Write source code
+        // Step 5: Write source code (lockHandle as query parameter per ADT API spec)
         // ----------------------------------------------------------
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Lock-Handle", lockHandle);
+        String separator = sourceUrl.contains("?") ? "&" : "?";
+        String writePath = sourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
         if (transport != null && !transport.isEmpty()) {
-            headers.put("X-Transport", transport);
+            writePath = writePath + "&corrNr=" + urlEncode(transport);
         }
 
-        client.putWithHeaders(sourceUrl, source, "text/plain", headers);
+        client.put(writePath, source, "text/plain; charset=utf-8");
 
         // ----------------------------------------------------------
         // Step 6: Syntax check
