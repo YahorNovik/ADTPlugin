@@ -1,6 +1,8 @@
 package com.sap.ai.assistant.llm;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -13,39 +15,100 @@ import com.sap.ai.assistant.model.LlmProviderConfig;
  * Base class for LLM providers that communicate with their API over HTTP/JSON.
  * Provides a shared {@link HttpClient}, common request helpers, and hooks for
  * provider-specific authentication headers.
+ * <p>
+ * Supports proxy configuration via Java system properties
+ * ({@code https.proxyHost} / {@code https.proxyPort}) or Eclipse proxy settings.
+ * </p>
  */
 public abstract class AbstractLlmProvider implements LlmProvider {
 
-    /** Maximum time to wait for an HTTP response (120 seconds). */
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(120);
 
     protected final HttpClient httpClient;
     protected final LlmProviderConfig config;
 
-    /**
-     * Creates a new provider with the given configuration.
-     *
-     * @param config the provider configuration (API key, model, base URL, etc.)
-     */
     protected AbstractLlmProvider(LlmProviderConfig config) {
         this.config = config;
-        this.httpClient = HttpClient.newBuilder()
+        this.httpClient = buildHttpClient();
+    }
+
+    private HttpClient buildHttpClient() {
+        HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
-                .build();
+                .followRedirects(HttpClient.Redirect.NORMAL);
+
+        // Try to configure proxy
+        try {
+            // 1. Check Java system properties
+            String httpsProxyHost = System.getProperty("https.proxyHost");
+            String httpsProxyPort = System.getProperty("https.proxyPort", "8080");
+            String httpProxyHost = System.getProperty("http.proxyHost");
+            String httpProxyPort = System.getProperty("http.proxyPort", "8080");
+
+            String proxyHost = httpsProxyHost != null ? httpsProxyHost : httpProxyHost;
+            String proxyPort = httpsProxyHost != null ? httpsProxyPort : httpProxyPort;
+
+            if (proxyHost != null && !proxyHost.isEmpty()) {
+                int port = Integer.parseInt(proxyPort);
+                builder.proxy(ProxySelector.of(new InetSocketAddress(proxyHost, port)));
+                System.out.println("LLM HttpClient using proxy: " + proxyHost + ":" + port);
+            } else {
+                // 2. Try Eclipse proxy settings via IProxyService
+                try {
+                    configureEclipseProxy(builder);
+                } catch (Exception e) {
+                    // Eclipse proxy service not available — use system default
+                    builder.proxy(ProxySelector.getDefault());
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("LLM HttpClient proxy setup failed: " + e.getMessage());
+            // Fall back to default (direct connection)
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Attempts to configure proxy from Eclipse's IProxyService.
+     */
+    private void configureEclipseProxy(HttpClient.Builder builder) throws Exception {
+        // Use reflection to avoid hard dependency on org.eclipse.core.net
+        Class<?> proxyServiceClass = Class.forName("org.eclipse.core.net.proxy.IProxyService");
+        Object proxyService = org.eclipse.core.runtime.Platform.getBundle("org.eclipse.core.net")
+                .getBundleContext()
+                .getServiceReference(proxyServiceClass);
+
+        if (proxyService != null) {
+            // Get proxy data for HTTPS
+            Object[] proxyDataArray = (Object[]) proxyServiceClass
+                    .getMethod("select", URI.class)
+                    .invoke(proxyService, URI.create("https://api.anthropic.com"));
+
+            if (proxyDataArray != null && proxyDataArray.length > 0) {
+                Object proxyData = proxyDataArray[0];
+                Class<?> proxyDataClass = proxyData.getClass();
+                String type = (String) proxyDataClass.getMethod("getType").invoke(proxyData);
+
+                if ("HTTP".equals(type) || "HTTPS".equals(type)) {
+                    String host = (String) proxyDataClass.getMethod("getHost").invoke(proxyData);
+                    int port = (int) proxyDataClass.getMethod("getPort").invoke(proxyData);
+
+                    if (host != null && !host.isEmpty() && port > 0) {
+                        builder.proxy(ProxySelector.of(new InetSocketAddress(host, port)));
+                        System.out.println("LLM HttpClient using Eclipse proxy: " + host + ":" + port);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // No Eclipse proxy configured — use system default
+        builder.proxy(ProxySelector.getDefault());
     }
 
     // -- HTTP helpers -------------------------------------------------------
 
-    /**
-     * Sends a POST request with a JSON body to the given URL.
-     * The request automatically includes {@code Content-Type: application/json}
-     * and the provider-specific authentication header(s).
-     *
-     * @param url  the fully-qualified endpoint URL
-     * @param body the JSON request body
-     * @return the HTTP response
-     * @throws LlmException if a network error occurs or the response indicates failure
-     */
     protected HttpResponse<String> sendRequest(String url, String body) throws LlmException {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -54,7 +117,6 @@ public abstract class AbstractLlmProvider implements LlmProvider {
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body));
 
-            // Let subclasses add authentication headers
             addAuthHeaders(builder);
 
             HttpRequest request = builder.build();
@@ -71,22 +133,29 @@ public abstract class AbstractLlmProvider implements LlmProvider {
             return response;
         } catch (LlmException e) {
             throw e;
+        } catch (java.net.ConnectException e) {
+            throw new LlmException(
+                    "Cannot connect to " + getProviderId() + " API at " + url
+                    + ". Check your network connection and proxy settings. "
+                    + "(Eclipse: Window > Preferences > General > Network Connections)",
+                    e);
+        } catch (javax.net.ssl.SSLException e) {
+            throw new LlmException(
+                    "SSL error connecting to " + getProviderId() + " API at " + url
+                    + ". If behind a corporate proxy, configure Eclipse proxy settings. "
+                    + "Error: " + e.getMessage(),
+                    e);
         } catch (IOException e) {
-            throw new LlmException("Network error calling " + getProviderId() + " API: " + e.getMessage(), e);
+            throw new LlmException(
+                    "Network error calling " + getProviderId() + " API at " + url
+                    + ": " + e.getMessage(),
+                    e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new LlmException("Request to " + getProviderId() + " API was interrupted", e);
         }
     }
 
-    /**
-     * Adds provider-specific authentication headers to the request.
-     * The default implementation adds a single header using
-     * {@link #getAuthHeaderName()} / {@link #getAuthHeaderValue()}.
-     * Subclasses may override this to add multiple headers or skip it entirely.
-     *
-     * @param builder the HTTP request builder
-     */
     protected void addAuthHeaders(HttpRequest.Builder builder) {
         String name = getAuthHeaderName();
         if (name != null) {
@@ -94,35 +163,15 @@ public abstract class AbstractLlmProvider implements LlmProvider {
         }
     }
 
-    /**
-     * Returns the name of the authentication header (e.g. "Authorization", "x-api-key").
-     * Return {@code null} if no auth header is needed (e.g. API key in URL).
-     *
-     * @return the header name, or {@code null}
-     */
     protected abstract String getAuthHeaderName();
-
-    /**
-     * Returns the value for the authentication header.
-     *
-     * @return the header value
-     */
     protected abstract String getAuthHeaderValue();
 
-    /**
-     * Attempts to extract a human-readable error message from the provider's
-     * JSON error response body.  Falls back to the raw body if parsing fails.
-     *
-     * @param responseBody the raw response body
-     * @return the extracted or raw error message
-     */
     protected String parseErrorMessage(String responseBody) {
         if (responseBody == null || responseBody.isEmpty()) {
             return "No response body";
         }
         try {
             com.google.gson.JsonObject json = com.google.gson.JsonParser.parseString(responseBody).getAsJsonObject();
-            // Anthropic format: { "error": { "message": "..." } }
             if (json.has("error")) {
                 com.google.gson.JsonElement errorEl = json.get("error");
                 if (errorEl.isJsonObject()) {
@@ -131,19 +180,14 @@ public abstract class AbstractLlmProvider implements LlmProvider {
                         return errorObj.get("message").getAsString();
                     }
                 }
-                // OpenAI may also use { "error": { "message": "..." } }
                 if (errorEl.isJsonPrimitive()) {
                     return errorEl.getAsString();
                 }
             }
-            // Google format: { "error": { "message": "...", "status": "..." } }
-            // Already handled above
-            // Mistral / other: { "message": "..." }
             if (json.has("message")) {
                 return json.get("message").getAsString();
             }
         } catch (Exception ignored) {
-            // Fall through to raw body
         }
         return responseBody.length() > 500 ? responseBody.substring(0, 500) + "..." : responseBody;
     }
