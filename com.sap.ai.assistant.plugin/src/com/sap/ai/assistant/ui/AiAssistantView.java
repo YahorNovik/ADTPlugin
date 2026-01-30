@@ -221,8 +221,29 @@ public class AiAssistantView extends ViewPart {
             chatComposite.setContextLabel("Context: " + ctxInfo);
         }
 
-        // Selected SAP system
+        // Selected SAP system — prompt for password if missing
         SapSystemConnection selectedSystem = systemSelector.getSelectedSystem();
+        if (selectedSystem != null
+                && (selectedSystem.getPassword() == null || selectedSystem.getPassword().isEmpty())) {
+            org.eclipse.jface.dialogs.InputDialog passDialog =
+                    new org.eclipse.jface.dialogs.InputDialog(
+                            getSite().getShell(),
+                            "SAP Login",
+                            "Enter password for " + selectedSystem.getProjectName()
+                                    + " (user: " + selectedSystem.getUser() + "):",
+                            "", null) {
+                        @Override
+                        protected int getInputTextStyle() {
+                            return SWT.SINGLE | SWT.BORDER | SWT.PASSWORD;
+                        }
+                    };
+            if (passDialog.open() == org.eclipse.jface.window.Window.OK) {
+                selectedSystem.setPassword(passDialog.getValue());
+            } else {
+                chatComposite.setRunning(false);
+                return;
+            }
+        }
 
         // Determine conversation key from selected system
         String systemKey = selectedSystem != null

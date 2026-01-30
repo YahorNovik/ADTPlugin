@@ -183,10 +183,11 @@ public class AdtConnectionManager {
             // ignore
         }
 
-        // 4. Last resort: create a stub connection with the project name
-        //    so the user can at least see the project and fill in details manually
-        return new SapSystemConnection(
-                projectName, projectName, 443, "000", "", "", true);
+        // Could not extract real connection data — skip this project.
+        // User should use "Add Manual..." to register with proper host/credentials.
+        System.out.println("AdtConnectionManager: no connection data found for '"
+                + projectName + "' — use Add Manual to register this system");
+        return null;
     }
 
     /**
