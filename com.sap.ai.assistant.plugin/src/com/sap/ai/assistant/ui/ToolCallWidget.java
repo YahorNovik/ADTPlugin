@@ -53,13 +53,7 @@ public class ToolCallWidget extends Composite {
         Display display = getDisplay();
         createCodeFont(display);
 
-        boolean dark = isDark(display);
-        Color bg = dark ? new Color(display, 50, 50, 55)
-                        : new Color(display, 248, 248, 248);
-        Color fg = dark ? new Color(display, 200, 200, 200)
-                        : display.getSystemColor(SWT.COLOR_WIDGET_FOREGROUND);
-        setBackground(bg);
-        setForeground(fg);
+        setBackground(display.getSystemColor(SWT.COLOR_LIST_BACKGROUND));
 
         GridLayout layout = new GridLayout(1, false);
         layout.marginWidth = 8;
@@ -223,15 +217,6 @@ public class ToolCallWidget extends Composite {
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
-
-    private static boolean isDark(Display display) {
-        Color c = display.getSystemColor(SWT.COLOR_LIST_BACKGROUND);
-        if (c != null) {
-            org.eclipse.swt.graphics.RGB rgb = c.getRGB();
-            return (rgb.red * 0.299 + rgb.green * 0.587 + rgb.blue * 0.114) < 128;
-        }
-        return false;
-    }
 
     private void createCodeFont(Display display) {
         String[] candidates = { "Menlo", "Consolas", "Courier New", "Courier" };
