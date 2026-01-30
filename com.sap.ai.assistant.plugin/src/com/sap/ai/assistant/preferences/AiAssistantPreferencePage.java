@@ -26,6 +26,7 @@ import com.sap.ai.assistant.Activator;
 import com.sap.ai.assistant.mcp.McpClient;
 import com.sap.ai.assistant.mcp.McpServerConfig;
 import com.sap.ai.assistant.model.LlmProviderConfig;
+import com.sap.ai.assistant.model.SavedSapSystem;
 
 /**
  * Preference page for the SAP AI Assistant plug-in.
@@ -42,6 +43,8 @@ public class AiAssistantPreferencePage extends PreferencePage
     private Combo modelCombo;
     private Spinner maxTokensSpinner;
     private Button includeContextCheck;
+    private Table sapSystemsTable;
+    private List<SavedSapSystem> savedSapSystems = new ArrayList<>();
     private Table mcpTable;
     private List<McpServerConfig> mcpServers = new ArrayList<>();
 
@@ -105,6 +108,53 @@ public class AiAssistantPreferencePage extends PreferencePage
         includeContextCheck = new Button(behaviourGroup, SWT.CHECK);
         includeContextCheck.setText("Include editor context in prompts");
         includeContextCheck.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        // -- Saved SAP Systems group --
+        Group sapGroup = new Group(container, SWT.NONE);
+        sapGroup.setText("Saved SAP Systems");
+        sapGroup.setLayout(new GridLayout(2, false));
+        sapGroup.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, false));
+
+        sapSystemsTable = new Table(sapGroup, SWT.BORDER | SWT.FULL_SELECTION | SWT.SINGLE);
+        sapSystemsTable.setHeaderVisible(true);
+        sapSystemsTable.setLinesVisible(true);
+        GridData sapTableGd = new GridData(SWT.FILL, SWT.FILL, true, true);
+        sapTableGd.heightHint = 80;
+        sapSystemsTable.setLayoutData(sapTableGd);
+
+        TableColumn hostCol = new TableColumn(sapSystemsTable, SWT.NONE);
+        hostCol.setText("Host");
+        hostCol.setWidth(180);
+
+        TableColumn portCol = new TableColumn(sapSystemsTable, SWT.NONE);
+        portCol.setText("Port");
+        portCol.setWidth(60);
+
+        TableColumn clientCol = new TableColumn(sapSystemsTable, SWT.NONE);
+        clientCol.setText("Client");
+        clientCol.setWidth(60);
+
+        TableColumn userCol = new TableColumn(sapSystemsTable, SWT.NONE);
+        userCol.setText("User");
+        userCol.setWidth(100);
+
+        TableColumn sslCol = new TableColumn(sapSystemsTable, SWT.NONE);
+        sslCol.setText("SSL");
+        sslCol.setWidth(40);
+
+        Composite sapButtons = new Composite(sapGroup, SWT.NONE);
+        sapButtons.setLayout(new GridLayout(1, true));
+        sapButtons.setLayoutData(new GridData(SWT.CENTER, SWT.TOP, false, false));
+
+        Button sapAddBtn = new Button(sapButtons, SWT.PUSH);
+        sapAddBtn.setText("Add...");
+        sapAddBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        sapAddBtn.addListener(SWT.Selection, e -> handleSapSystemAdd());
+
+        Button sapRemoveBtn = new Button(sapButtons, SWT.PUSH);
+        sapRemoveBtn.setText("Remove");
+        sapRemoveBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        sapRemoveBtn.addListener(SWT.Selection, e -> handleSapSystemRemove());
 
         // -- MCP Servers group --
         Group mcpGroup = new Group(container, SWT.NONE);
@@ -230,10 +280,27 @@ public class AiAssistantPreferencePage extends PreferencePage
         // Include context
         includeContextCheck.setSelection(store.getBoolean(PreferenceConstants.INCLUDE_CONTEXT));
 
+        // Saved SAP Systems
+        String sapJson = store.getString(PreferenceConstants.SAP_SAVED_SYSTEMS);
+        savedSapSystems = SavedSapSystem.fromJson(sapJson);
+        refreshSapSystemsTable();
+
         // MCP Servers
         String mcpJson = store.getString(PreferenceConstants.MCP_SERVERS);
         mcpServers = McpServerConfig.fromJson(mcpJson);
         refreshMcpTable();
+    }
+
+    private void refreshSapSystemsTable() {
+        sapSystemsTable.removeAll();
+        for (SavedSapSystem sys : savedSapSystems) {
+            TableItem item = new TableItem(sapSystemsTable, SWT.NONE);
+            item.setText(0, sys.getHost());
+            item.setText(1, String.valueOf(sys.getPort()));
+            item.setText(2, sys.getClient());
+            item.setText(3, sys.getUser() != null ? sys.getUser() : "");
+            item.setText(4, sys.isUseSsl() ? "Yes" : "No");
+        }
     }
 
     private void refreshMcpTable() {
@@ -266,6 +333,9 @@ public class AiAssistantPreferencePage extends PreferencePage
         }
         store.setValue(PreferenceConstants.MCP_SERVERS, McpServerConfig.toJson(mcpServers));
 
+        // Saved SAP Systems
+        store.setValue(PreferenceConstants.SAP_SAVED_SYSTEMS, SavedSapSystem.toJson(savedSapSystems));
+
         return super.performOk();
     }
 
@@ -277,6 +347,10 @@ public class AiAssistantPreferencePage extends PreferencePage
         maxTokensSpinner.setSelection(8192);
         includeContextCheck.setSelection(true);
 
+        // Reset saved SAP systems
+        savedSapSystems = new ArrayList<>();
+        refreshSapSystemsTable();
+
         // Reset MCP servers to default
         mcpServers = new ArrayList<>();
         mcpServers.add(new McpServerConfig("SAP Docs",
@@ -284,6 +358,91 @@ public class AiAssistantPreferencePage extends PreferencePage
         refreshMcpTable();
 
         super.performDefaults();
+    }
+
+    // -- SAP System management -----------------------------------------------
+
+    private void handleSapSystemAdd() {
+        org.eclipse.jface.dialogs.InputDialog hostDialog =
+                new org.eclipse.jface.dialogs.InputDialog(
+                        getShell(), "Add SAP System",
+                        "Hostname or URL (e.g. myhost.sap.corp or http://myhost:8000):", "", null);
+        if (hostDialog.open() != org.eclipse.jface.window.Window.OK) return;
+        String hostInput = hostDialog.getValue().trim();
+        if (hostInput.isEmpty()) return;
+
+        // Parse host input — user may enter a full URL, host:port, or just hostname
+        String host = hostInput;
+        int parsedPort = -1;
+        boolean parsedSsl = false;
+
+        if (host.startsWith("http://") || host.startsWith("https://")) {
+            parsedSsl = host.startsWith("https://");
+            host = host.replaceFirst("https?://", "");
+        }
+        // Strip trailing slash/path
+        int slashIdx = host.indexOf('/');
+        if (slashIdx >= 0) {
+            host = host.substring(0, slashIdx);
+        }
+        // Extract port from host:port
+        int colonIdx = host.lastIndexOf(':');
+        if (colonIdx >= 0) {
+            try {
+                parsedPort = Integer.parseInt(host.substring(colonIdx + 1));
+                host = host.substring(0, colonIdx);
+            } catch (NumberFormatException ignored) {
+                // Not a port — keep host as-is
+            }
+        }
+
+        String defaultPort = parsedPort > 0 ? String.valueOf(parsedPort) : "8000";
+        org.eclipse.jface.dialogs.InputDialog portDialog =
+                new org.eclipse.jface.dialogs.InputDialog(
+                        getShell(), "Add SAP System", "Port (e.g. 8000 for HTTP, 44300 for HTTPS):",
+                        defaultPort,
+                        input -> {
+                            try {
+                                int p = Integer.parseInt(input);
+                                return (p > 0 && p <= 65535) ? null : "Port must be 1-65535";
+                            } catch (NumberFormatException ex) {
+                                return "Invalid number";
+                            }
+                        });
+        if (portDialog.open() != org.eclipse.jface.window.Window.OK) return;
+        int port = Integer.parseInt(portDialog.getValue().trim());
+
+        // SSL: default based on parsed URL or common port conventions
+        boolean defaultSsl = parsedSsl || port == 443 || port == 44300 || port == 44301;
+        boolean useSsl = org.eclipse.jface.dialogs.MessageDialog.openQuestion(
+                getShell(), "Add SAP System",
+                "Use HTTPS (SSL) for this connection?\n\n"
+                + "Host: " + host + ":" + port + "\n"
+                + "(Current default: " + (defaultSsl ? "Yes" : "No") + ")");
+
+        org.eclipse.jface.dialogs.InputDialog clientDialog =
+                new org.eclipse.jface.dialogs.InputDialog(
+                        getShell(), "Add SAP System",
+                        "Client number (e.g. 100):", "100", null);
+        if (clientDialog.open() != org.eclipse.jface.window.Window.OK) return;
+        String client = clientDialog.getValue().trim();
+
+        org.eclipse.jface.dialogs.InputDialog userDialog =
+                new org.eclipse.jface.dialogs.InputDialog(
+                        getShell(), "Add SAP System", "User name:", "", null);
+        if (userDialog.open() != org.eclipse.jface.window.Window.OK) return;
+        String user = userDialog.getValue().trim();
+
+        savedSapSystems.add(new SavedSapSystem(host, port, client, user, useSsl));
+        refreshSapSystemsTable();
+    }
+
+    private void handleSapSystemRemove() {
+        int idx = sapSystemsTable.getSelectionIndex();
+        if (idx < 0 || idx >= savedSapSystems.size()) return;
+
+        savedSapSystems.remove(idx);
+        refreshSapSystemsTable();
     }
 
     // -- MCP Server management -----------------------------------------------
