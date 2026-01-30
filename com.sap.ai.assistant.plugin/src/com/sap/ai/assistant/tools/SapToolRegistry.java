@@ -50,8 +50,7 @@ public class SapToolRegistry {
         register(map, new SetSourceTool(client));
         register(map, new ObjectStructureTool(client));
         register(map, new NodeContentsTool(client));
-        register(map, new LockTool(client));
-        register(map, new UnlockTool(client));
+        // Lock/Unlock are handled automatically inside SetSourceTool and WriteAndCheckTool
         register(map, new ActivateTool(client));
         register(map, new SyntaxCheckTool(client));
         register(map, new AtcRunTool(client));

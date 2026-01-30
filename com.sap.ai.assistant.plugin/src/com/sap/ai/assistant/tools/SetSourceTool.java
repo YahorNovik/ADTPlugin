@@ -7,10 +7,12 @@ import com.google.gson.JsonObject;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
 import com.sap.ai.assistant.sap.AdtRestClient;
+import com.sap.ai.assistant.sap.AdtXmlParser;
 
 /**
  * Tool: <b>sap_set_source</b> -- Write (PUT) the ABAP source code of
- * an object. Requires a valid lock handle obtained via {@code sap_lock}.
+ * an object. Automatically locks the source URL before writing and
+ * unlocks it afterwards.
  */
 public class SetSourceTool extends AbstractSapTool {
 
@@ -37,11 +39,6 @@ public class SetSourceTool extends AbstractSapTool {
         sourceProp.addProperty("description",
                 "The complete ABAP source code to write");
 
-        JsonObject lockProp = new JsonObject();
-        lockProp.addProperty("type", "string");
-        lockProp.addProperty("description",
-                "The lock handle obtained from sap_lock");
-
         JsonObject transportProp = new JsonObject();
         transportProp.addProperty("type", "string");
         transportProp.addProperty("description",
@@ -50,13 +47,11 @@ public class SetSourceTool extends AbstractSapTool {
         JsonObject properties = new JsonObject();
         properties.add("objectSourceUrl", urlProp);
         properties.add("source", sourceProp);
-        properties.add("lockHandle", lockProp);
         properties.add("transport", transportProp);
 
         JsonArray required = new JsonArray();
         required.add("objectSourceUrl");
         required.add("source");
-        required.add("lockHandle");
 
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
@@ -64,8 +59,9 @@ public class SetSourceTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Write ABAP source code to a repository object. The object must be locked first using sap_lock. "
-                        + "Provide the full source code, the source URL, the lock handle, and optionally a transport request.",
+                "Write ABAP source code to a repository object. Automatically locks the object before writing "
+                        + "and unlocks it afterwards. Provide the full source code, the source URL, "
+                        + "and optionally a transport request.",
                 schema);
     }
 
@@ -73,21 +69,42 @@ public class SetSourceTool extends AbstractSapTool {
     public ToolResult execute(JsonObject arguments) throws Exception {
         String objectSourceUrl = arguments.get("objectSourceUrl").getAsString();
         String source = arguments.get("source").getAsString();
-        String lockHandle = arguments.get("lockHandle").getAsString();
         String transport = optString(arguments, "transport");
 
-        // lockHandle and transport are query parameters per ADT API spec
-        String separator = objectSourceUrl.contains("?") ? "&" : "?";
-        String path = objectSourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
-        if (transport != null && !transport.isEmpty()) {
-            path = path + "&corrNr=" + urlEncode(transport);
+        // Step 1: Lock the source URL
+        String lockPath = objectSourceUrl + "?_action=LOCK&accessMode=MODIFY";
+        HttpResponse<String> lockResp = client.post(lockPath, "",
+                "application/*",
+                "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
+        String lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
+
+        if (lockHandle == null || lockHandle.isEmpty()) {
+            return ToolResult.error(null,
+                    "Failed to acquire lock on " + objectSourceUrl + ". Response: " + lockResp.body());
         }
 
-        HttpResponse<String> response = client.put(path, source, "text/plain; charset=utf-8");
+        try {
+            // Step 2: Write source with lockHandle as query parameter
+            String separator = objectSourceUrl.contains("?") ? "&" : "?";
+            String path = objectSourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
+            if (transport != null && !transport.isEmpty()) {
+                path = path + "&corrNr=" + urlEncode(transport);
+            }
 
-        JsonObject output = new JsonObject();
-        output.addProperty("status", "success");
-        output.addProperty("statusCode", response.statusCode());
-        return ToolResult.success(null, output.toString());
+            HttpResponse<String> response = client.put(path, source, "text/plain; charset=utf-8");
+
+            JsonObject output = new JsonObject();
+            output.addProperty("status", "success");
+            output.addProperty("statusCode", response.statusCode());
+            return ToolResult.success(null, output.toString());
+        } finally {
+            // Step 3: Always unlock
+            try {
+                String unlockPath = objectSourceUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
+                client.post(unlockPath, "", "application/*", "application/*");
+            } catch (Exception e) {
+                System.err.println("SetSourceTool: auto-unlock failed: " + e.getMessage());
+            }
+        }
     }
 }

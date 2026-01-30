@@ -95,11 +95,6 @@ public class WriteAndCheckTool extends AbstractSapTool {
         transportProp.addProperty("description",
                 "Optional transport request number");
 
-        JsonObject lockHandleProp = new JsonObject();
-        lockHandleProp.addProperty("type", "string");
-        lockHandleProp.addProperty("description",
-                "Optional lock handle to reuse (skip locking step)");
-
         JsonObject properties = new JsonObject();
         properties.add("objtype", objtypeProp);
         properties.add("name", nameProp);
@@ -108,7 +103,6 @@ public class WriteAndCheckTool extends AbstractSapTool {
         properties.add("description", descProp);
         properties.add("source", sourceProp);
         properties.add("transport", transportProp);
-        properties.add("lockHandle", lockHandleProp);
 
         JsonArray required = new JsonArray();
         required.add("objtype");
@@ -124,8 +118,8 @@ public class WriteAndCheckTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Composite tool: search/create an ABAP object, lock it, write source code, and run a syntax check "
-                        + "-- all in one call. Returns the object URL, source URL, lock handle, and syntax check results.",
+                "Composite tool: search/create an ABAP object, lock it, write source code, unlock, and run a syntax check "
+                        + "-- all in one call. Locking and unlocking are handled automatically.",
                 schema);
     }
 
@@ -138,7 +132,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
         String description = arguments.get("description").getAsString();
         String source = arguments.get("source").getAsString();
         String transport = optString(arguments, "transport");
-        String lockHandle = optString(arguments, "lockHandle");
+        String lockHandle = null;
 
         JsonObject output = new JsonObject();
         boolean created = false;
@@ -248,35 +242,39 @@ public class WriteAndCheckTool extends AbstractSapTool {
         output.addProperty("sourceUrl", sourceUrl);
 
         // ----------------------------------------------------------
-        // Step 4: Lock (or reuse existing handle)
-        // Lock the SOURCE URL (not the object URL) because the PUT
-        // goes to the source URL and SAP validates the lock against
-        // the resource being written.
+        // Step 4: Lock the source URL
         // ----------------------------------------------------------
-        if (lockHandle == null || lockHandle.isEmpty()) {
-            String lockPath = sourceUrl + "?_action=LOCK&accessMode=MODIFY";
-            HttpResponse<String> lockResp = client.post(lockPath, "",
-                    "application/*",
-                    "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
-            lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
+        String lockPath = sourceUrl + "?_action=LOCK&accessMode=MODIFY";
+        HttpResponse<String> lockResp = client.post(lockPath, "",
+                "application/*",
+                "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
+        lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
 
-            if (lockHandle == null || lockHandle.isEmpty()) {
-                return ToolResult.error(null,
-                        "Failed to acquire lock on " + sourceUrl + ". Response: " + lockResp.body());
-            }
+        if (lockHandle == null || lockHandle.isEmpty()) {
+            return ToolResult.error(null,
+                    "Failed to acquire lock on " + sourceUrl + ". Response: " + lockResp.body());
         }
-        output.addProperty("lockHandle", lockHandle);
 
         // ----------------------------------------------------------
         // Step 5: Write source code (lockHandle as query parameter per ADT API spec)
         // ----------------------------------------------------------
-        String separator = sourceUrl.contains("?") ? "&" : "?";
-        String writePath = sourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
-        if (transport != null && !transport.isEmpty()) {
-            writePath = writePath + "&corrNr=" + urlEncode(transport);
-        }
+        try {
+            String separator = sourceUrl.contains("?") ? "&" : "?";
+            String writePath = sourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
+            if (transport != null && !transport.isEmpty()) {
+                writePath = writePath + "&corrNr=" + urlEncode(transport);
+            }
 
-        client.put(writePath, source, "text/plain; charset=utf-8");
+            client.put(writePath, source, "text/plain; charset=utf-8");
+        } finally {
+            // Always unlock after writing (regardless of success/failure)
+            try {
+                String unlockPath = sourceUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
+                client.post(unlockPath, "", "application/*", "application/*");
+            } catch (Exception unlockEx) {
+                System.err.println("WriteAndCheckTool: auto-unlock failed: " + unlockEx.getMessage());
+            }
+        }
 
         // ----------------------------------------------------------
         // Step 6: Syntax check
