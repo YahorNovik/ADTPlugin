@@ -220,8 +220,6 @@ public class AnthropicProvider extends AbstractLlmProvider {
             String text = textContent.length() > 0 ? textContent.toString() : null;
             return new ChatMessage(ChatMessage.Role.ASSISTANT, text, toolCalls, null);
 
-        } catch (LlmException e) {
-            throw e;
         } catch (Exception e) {
             throw new LlmException("Failed to parse Anthropic response: " + e.getMessage(), e);
         }
