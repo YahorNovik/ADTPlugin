@@ -3,7 +3,6 @@ package com.sap.ai.assistant.sap;
 import java.io.IOException;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
-import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -80,8 +79,8 @@ public class AdtRestClient {
         HttpClient.Builder builder = HttpClient.newBuilder()
                 .cookieHandler(this.cookieManager)
                 .connectTimeout(Duration.ofSeconds(30))
-                .version(HttpClient.Version.HTTP_1_1)
-                .proxy(ProxySelector.of(null));  // Force DIRECT — avoid OS auto-proxy
+                .version(HttpClient.Version.HTTP_1_1);
+                // Use JVM default ProxySelector — corporate proxies resolve internal hostnames
 
         if (allowInsecureSsl) {
             try {
