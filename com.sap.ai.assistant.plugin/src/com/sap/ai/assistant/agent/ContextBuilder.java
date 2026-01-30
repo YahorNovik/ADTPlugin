@@ -53,12 +53,16 @@ public class ContextBuilder {
         sb.append("When modifying ABAP source code, always follow this sequence:\n\n");
         sb.append("1. **Lock** the object before making changes (sap_lock_object).\n");
         sb.append("2. **Write** the new source code (sap_set_source or sap_write_and_check).\n");
-        sb.append("3. **Fix errors** \u2014 run a syntax check (sap_syntax_check) and fix any issues.\n");
+        sb.append("3. **Syntax checks run automatically** after every write. If errors are ")
+          .append("reported, you MUST fix them and write the corrected source before proceeding.\n");
         sb.append("4. **Activate** the object (sap_activate_object). If activation fails, ")
           .append("fix the reported errors and retry.\n");
         sb.append("5. **ATC check** \u2014 run the ABAP Test Cockpit (sap_atc_run) and resolve ")
           .append("any critical findings.\n");
         sb.append("6. **Unlock** the object when finished (sap_unlock_object).\n\n");
+        sb.append("IMPORTANT: Syntax checking is automatic. After every write operation, the system ")
+          .append("will check for syntax errors. If errors are found, you will receive them and MUST ")
+          .append("fix all errors before continuing. Do NOT skip syntax errors.\n\n");
         sb.append("Always ensure the object is unlocked after changes, even if an error occurs.\n\n");
 
         // -- SAP Documentation tools --

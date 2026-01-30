@@ -134,6 +134,9 @@ public class AgentLoop {
 
                 // 4. Execute each tool call
                 List<ToolResult> results = new ArrayList<>();
+                boolean syntaxErrorsDetected = false;
+                StringBuilder syntaxErrorReport = new StringBuilder();
+
                 for (ToolCall toolCall : response.getToolCalls()) {
                     callback.onToolCallStart(toolCall);
 
@@ -141,11 +144,29 @@ public class AgentLoop {
                     results.add(result);
 
                     callback.onToolCallEnd(result);
+
+                    // Auto syntax check after write tools
+                    if (isWriteTool(toolCall.getName()) && !result.isError()) {
+                        String errors = checkSyntaxAfterWrite(toolCall, result);
+                        if (errors != null) {
+                            syntaxErrorsDetected = true;
+                            syntaxErrorReport.append(errors);
+                        }
+                    }
                 }
 
                 // 5. Build tool results message and add to conversation
                 ChatMessage toolResultsMessage = ChatMessage.toolResults(results);
                 conversation.addAssistantMessage(toolResultsMessage);
+
+                // 6. If syntax errors detected, inject fix instruction
+                if (syntaxErrorsDetected) {
+                    String fixInstruction =
+                            "[SYSTEM] Syntax errors detected after writing source:\n"
+                            + syntaxErrorReport.toString()
+                            + "\nYou MUST fix these syntax errors and write the corrected source code.";
+                    conversation.addUserMessage(fixInstruction);
+                }
             }
 
             // Maximum rounds exceeded
@@ -217,6 +238,97 @@ public class AgentLoop {
 
     private boolean isWriteTool(String name) {
         return SetSourceTool.NAME.equals(name) || WriteAndCheckTool.NAME.equals(name);
+    }
+
+    /**
+     * Checks for syntax errors after a write tool execution.
+     * For {@code sap_write_and_check}: parses the existing result JSON.
+     * For {@code sap_set_source}: runs {@code sap_syntax_check} automatically.
+     *
+     * @return a formatted error string, or {@code null} if no errors
+     */
+    private String checkSyntaxAfterWrite(ToolCall toolCall, ToolResult result) {
+        try {
+            String toolName = toolCall.getName();
+
+            if (WriteAndCheckTool.NAME.equals(toolName)) {
+                // sap_write_and_check already includes syntax check results
+                return extractErrorsFromWriteAndCheckResult(result);
+            }
+
+            if (SetSourceTool.NAME.equals(toolName)) {
+                // sap_set_source does NOT run syntax check — run it now
+                return runSyntaxCheckForSetSource(toolCall);
+            }
+
+        } catch (Exception e) {
+            System.err.println("AgentLoop: auto syntax check failed: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private String extractErrorsFromWriteAndCheckResult(ToolResult result) {
+        try {
+            String content = result.getContent();
+            if (content == null || content.isEmpty()) return null;
+            JsonObject json = com.google.gson.JsonParser.parseString(content).getAsJsonObject();
+            if (!json.has("hasErrors") || !json.get("hasErrors").getAsBoolean()) {
+                return null;
+            }
+            // Extract syntax messages
+            if (json.has("syntaxMessages")) {
+                return formatSyntaxMessages(json.getAsJsonArray("syntaxMessages"));
+            }
+            return "Syntax errors detected (no details available).";
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String runSyntaxCheckForSetSource(ToolCall toolCall) {
+        if (toolRegistry == null) return null;
+        SapTool syntaxTool = toolRegistry.get("sap_syntax_check");
+        if (syntaxTool == null) return null;
+
+        try {
+            JsonObject args = toolCall.getArguments();
+            String sourceUrl = args.has("objectSourceUrl")
+                    ? args.get("objectSourceUrl").getAsString() : null;
+            if (sourceUrl == null || sourceUrl.isEmpty()) return null;
+
+            JsonObject checkArgs = new JsonObject();
+            checkArgs.addProperty("url", sourceUrl);
+
+            ToolResult checkResult = syntaxTool.execute(checkArgs);
+            if (checkResult == null || checkResult.isError()) return null;
+
+            String content = checkResult.getContent();
+            if (content == null) return null;
+            JsonObject json = com.google.gson.JsonParser.parseString(content).getAsJsonObject();
+            if (!json.has("hasErrors") || !json.get("hasErrors").getAsBoolean()) {
+                return null;
+            }
+            if (json.has("messages")) {
+                return formatSyntaxMessages(json.getAsJsonArray("messages"));
+            }
+            return "Syntax errors detected (no details available).";
+        } catch (Exception e) {
+            System.err.println("AgentLoop: auto syntax check for sap_set_source failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String formatSyntaxMessages(com.google.gson.JsonArray messages) {
+        if (messages == null || messages.size() == 0) return null;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < messages.size(); i++) {
+            JsonObject msg = messages.get(i).getAsJsonObject();
+            String severity = msg.has("severity") ? msg.get("severity").getAsString() : "?";
+            String text = msg.has("text") ? msg.get("text").getAsString() : "(no message)";
+            String line = msg.has("line") ? msg.get("line").getAsString() : "?";
+            sb.append("  Line ").append(line).append(" [").append(severity).append("]: ").append(text).append("\n");
+        }
+        return sb.toString();
     }
 
     /**
