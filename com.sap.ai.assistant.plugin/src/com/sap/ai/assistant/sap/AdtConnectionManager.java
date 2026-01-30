@@ -17,11 +17,12 @@ import com.sap.ai.assistant.model.SapSystemConnection;
  */
 public class AdtConnectionManager {
 
-    /** ADT project nature ID used by SAP ABAP projects in Eclipse. */
-    private static final String ADT_PROJECT_NATURE = "com.sap.adt.project.nature";
-
-    /** Alternative ADT nature ID (older ADT versions). */
-    private static final String ADT_PROJECT_NATURE_ALT = "com.sap.adt.tools.abap.project.nature";
+    /** ADT project natures used by SAP ABAP projects in Eclipse. */
+    private static final String[] ADT_NATURES = {
+        "com.sap.adt.project.adtnature",
+        "com.sap.adt.project.nature",
+        "com.sap.adt.tools.abap.project.nature"
+    };
 
     /** Manually registered SAP systems (for when ADT is not available). */
     private final List<SapSystemConnection> manualSystems = new ArrayList<>();
@@ -32,13 +33,6 @@ public class AdtConnectionManager {
 
     /**
      * Discover all SAP systems available in the current Eclipse workspace.
-     * <p>
-     * The method first tries to find ADT projects via the Eclipse
-     * Resources API. If the ADT SDK is not on the classpath, or no
-     * ADT projects are found, the manual systems list is returned.
-     * </p>
-     *
-     * @return unmodifiable list of discovered connections
      */
     public List<SapSystemConnection> discoverSystems() {
         List<SapSystemConnection> result = new ArrayList<>();
@@ -49,8 +43,8 @@ public class AdtConnectionManager {
             result.addAll(discovered);
         } catch (ClassNotFoundException e) {
             // ADT / Eclipse Resources API not on classpath -- ignore
+            System.out.println("AdtConnectionManager: Resources API not available, skipping workspace discovery");
         } catch (Exception e) {
-            // Any other reflection or runtime error -- log and continue
             System.err.println("AdtConnectionManager: failed to discover ADT projects: " + e.getMessage());
         }
 
@@ -61,58 +55,28 @@ public class AdtConnectionManager {
     }
 
     /**
-     * Register a SAP system manually. Use this when the ADT SDK is not
-     * installed or the system is not represented as an Eclipse project.
-     *
-     * @param name     display name
-     * @param host     hostname, e.g. "myhost.sap.corp"
-     * @param port     HTTP(S) port
-     * @param client   SAP client, e.g. "100"
-     * @param user     SAP user name
-     * @param password SAP password
+     * Register a SAP system manually.
      */
     public void addManualSystem(String name, String host, int port,
                                 String client, String user, String password) {
         manualSystems.add(new SapSystemConnection(name, host, port, client, user, password, true));
     }
 
-    /**
-     * Return the list of manually registered systems.
-     *
-     * @return unmodifiable list
-     */
     public List<SapSystemConnection> getManualSystems() {
         return Collections.unmodifiableList(manualSystems);
     }
 
-    /**
-     * Remove all manually registered systems.
-     */
     public void clearManualSystems() {
         manualSystems.clear();
     }
 
     // ---------------------------------------------------------------
-    // Eclipse workspace discovery (all ADT calls wrapped)
+    // Eclipse workspace discovery
     // ---------------------------------------------------------------
 
-    /**
-     * Iterate over workspace projects and detect ADT (ABAP) projects.
-     * <p>
-     * This method deliberately uses fully-qualified class names and
-     * reflection-safe patterns so that it compiles without the ADT SDK
-     * on the build path. All Eclipse resource classes are loaded
-     * dynamically.
-     * </p>
-     *
-     * @return list of discovered connections (may be empty)
-     * @throws ClassNotFoundException if Eclipse Resources API is absent
-     */
     private List<SapSystemConnection> discoverFromWorkspace() throws ClassNotFoundException {
         List<SapSystemConnection> connections = new ArrayList<>();
 
-        // Load Eclipse Resources API -- will throw ClassNotFoundException
-        // if org.eclipse.core.resources is not available.
         Class.forName("org.eclipse.core.resources.ResourcesPlugin");
 
         org.eclipse.core.resources.IWorkspaceRoot root =
@@ -133,7 +97,6 @@ public class AdtConnectionManager {
                     }
                 }
             } catch (Exception e) {
-                // Skip this project on any error
                 System.err.println("AdtConnectionManager: skipping project '"
                         + project.getName() + "': " + e.getMessage());
             }
@@ -142,127 +105,97 @@ public class AdtConnectionManager {
         return connections;
     }
 
-    /**
-     * Determine whether the given project is an ADT (ABAP) project.
-     * Tries the project nature first; falls back to checking persistent
-     * properties.
-     */
     private boolean isAdtProject(org.eclipse.core.resources.IProject project) {
-        try {
-            // Primary check: project nature
-            if (project.hasNature(ADT_PROJECT_NATURE)) {
-                return true;
+        // Check all known ADT nature IDs
+        for (String nature : ADT_NATURES) {
+            try {
+                if (project.hasNature(nature)) {
+                    return true;
+                }
+            } catch (Exception e) {
+                // Nature check failed
             }
-            if (project.hasNature(ADT_PROJECT_NATURE_ALT)) {
-                return true;
-            }
-        } catch (Exception e) {
-            // Nature check failed -- try property fallback below
         }
 
-        // Fallback: check for a well-known ADT project property
+        // Fallback: check for well-known ADT project properties
         try {
             String adtDest = project.getPersistentProperty(
                     new org.eclipse.core.runtime.QualifiedName(
                             "com.sap.adt.project", "destination"));
-            return adtDest != null && !adtDest.isEmpty();
+            if (adtDest != null && !adtDest.isEmpty()) {
+                return true;
+            }
         } catch (Exception e) {
-            // Property check failed as well
+            // ignore
+        }
+
+        // Fallback: check for ADT nature descriptor in project description
+        try {
+            String[] natures = project.getDescription().getNatureIds();
+            if (natures != null) {
+                for (String n : natures) {
+                    if (n != null && n.contains("com.sap.adt")) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // ignore
         }
 
         return false;
     }
 
-    /**
-     * Attempt to extract SAP connection information from an ADT project.
-     * <p>
-     * Since the ADT SDK provides adapter interfaces
-     * (e.g. {@code IDestinationData}) that may or may not be present,
-     * this method wraps every access in try/catch.
-     * </p>
-     *
-     * @return a connection descriptor, or null if extraction fails
-     */
     private SapSystemConnection extractConnectionFromProject(
             org.eclipse.core.resources.IProject project) {
         String projectName = project.getName();
 
-        // Try to read destination properties stored by ADT
+        // 1. Try ADT SDK adapter (preferred approach)
         try {
-            String destination = project.getPersistentProperty(
-                    new org.eclipse.core.runtime.QualifiedName(
-                            "com.sap.adt.project", "destination"));
-
-            String host = project.getPersistentProperty(
-                    new org.eclipse.core.runtime.QualifiedName(
-                            "com.sap.adt.project", "host"));
-
-            String portStr = project.getPersistentProperty(
-                    new org.eclipse.core.runtime.QualifiedName(
-                            "com.sap.adt.project", "port"));
-
-            String client = project.getPersistentProperty(
-                    new org.eclipse.core.runtime.QualifiedName(
-                            "com.sap.adt.project", "client"));
-
-            String user = project.getPersistentProperty(
-                    new org.eclipse.core.runtime.QualifiedName(
-                            "com.sap.adt.project", "user"));
-
-            if (host != null && !host.isEmpty()) {
-                int port = 443;
-                if (portStr != null && !portStr.isEmpty()) {
-                    try {
-                        port = Integer.parseInt(portStr);
-                    } catch (NumberFormatException ignored) {
-                        // keep default
-                    }
-                }
-
-                String displayName = (destination != null && !destination.isEmpty())
-                        ? destination : projectName;
-
-                // Password is not stored as a project property for security.
-                // The caller must supply it or prompt the user.
-                return new SapSystemConnection(
-                        displayName, host, port,
-                        client != null ? client : "000",
-                        user != null ? user : "",
-                        "" /* password must be provided separately */,
-                        true /* useSsl */
-                );
+            SapSystemConnection conn = extractViaAdtAdapter(project);
+            if (conn != null) {
+                return conn;
             }
-        } catch (Exception e) {
-            System.err.println("AdtConnectionManager: could not read properties for '"
-                    + projectName + "': " + e.getMessage());
-        }
-
-        // Try ADT SDK adapter as a last resort
-        try {
-            return extractViaAdtSdkAdapter(project);
         } catch (ClassNotFoundException e) {
             // ADT SDK not installed
         } catch (Exception e) {
-            System.err.println("AdtConnectionManager: ADT SDK adapter failed for '"
+            System.err.println("AdtConnectionManager: adapter extraction failed for '"
                     + projectName + "': " + e.getMessage());
         }
 
-        return null;
+        // 2. Try Platform adapter manager with lazy loading
+        try {
+            SapSystemConnection conn = extractViaPlatformAdapter(project);
+            if (conn != null) {
+                return conn;
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+
+        // 3. Try reading persistent properties
+        try {
+            SapSystemConnection conn = extractFromProperties(project);
+            if (conn != null) {
+                return conn;
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+
+        // 4. Last resort: create a stub connection with the project name
+        //    so the user can at least see the project and fill in details manually
+        return new SapSystemConnection(
+                projectName, projectName, 443, "000", "", "", true);
     }
 
     /**
-     * Attempt to use the ADT SDK adapter API to get connection info.
-     * This method loads ADT SDK classes by name so it compiles without
-     * them on the build path.
-     *
-     * @throws ClassNotFoundException if the ADT SDK is not installed
+     * Use the ADT SDK IDestinationData adapter via reflection.
      */
-    private SapSystemConnection extractViaAdtSdkAdapter(
+    private SapSystemConnection extractViaAdtAdapter(
             org.eclipse.core.resources.IProject project) throws ClassNotFoundException {
-        // Verify ADT SDK is available
         Class.forName("com.sap.adt.destinations.model.IDestinationData");
 
-        // Use reflection-safe access via Eclipse adapter framework
         Object adapted = project.getAdapter(
                 Class.forName("com.sap.adt.destinations.model.IDestinationData"));
 
@@ -270,35 +203,139 @@ public class AdtConnectionManager {
             return null;
         }
 
+        return extractFromAdaptedObject(project.getName(), adapted);
+    }
+
+    /**
+     * Use Platform.getAdapterManager().loadAdapter() which triggers lazy adapter factory loading.
+     */
+    private SapSystemConnection extractViaPlatformAdapter(
+            org.eclipse.core.resources.IProject project) {
         try {
-            // IDestinationData has getHost(), getPort(), getClient(), getUser()
-            java.lang.reflect.Method getHost = adapted.getClass().getMethod("getHost");
-            java.lang.reflect.Method getPort = adapted.getClass().getMethod("getPort");
-            java.lang.reflect.Method getClient = adapted.getClass().getMethod("getClient");
-            java.lang.reflect.Method getUser = adapted.getClass().getMethod("getUser");
+            Object adapted = org.eclipse.core.runtime.Platform.getAdapterManager()
+                    .loadAdapter(project, "com.sap.adt.destinations.model.IDestinationData");
+            if (adapted != null) {
+                return extractFromAdaptedObject(project.getName(), adapted);
+            }
+        } catch (Exception e) {
+            // Adapter not available
+        }
 
-            String host = (String) getHost.invoke(adapted);
-            Object portObj = getPort.invoke(adapted);
-            String client = (String) getClient.invoke(adapted);
-            String user = (String) getUser.invoke(adapted);
+        // Also try IAdtCoreProject adapter
+        try {
+            Object coreProject = org.eclipse.core.runtime.Platform.getAdapterManager()
+                    .loadAdapter(project, "com.sap.adt.project.IAdtCoreProject");
+            if (coreProject != null) {
+                java.lang.reflect.Method getDestData = coreProject.getClass().getMethod("getDestinationData");
+                Object destData = getDestData.invoke(coreProject);
+                if (destData != null) {
+                    return extractFromAdaptedObject(project.getName(), destData);
+                }
+            }
+        } catch (Exception e) {
+            // ignore
+        }
 
-            int port = 443;
-            if (portObj instanceof Number) {
-                port = ((Number) portObj).intValue();
-            } else if (portObj instanceof String) {
-                port = Integer.parseInt((String) portObj);
+        return null;
+    }
+
+    /**
+     * Extract connection info from an IDestinationData object using reflection.
+     */
+    private SapSystemConnection extractFromAdaptedObject(String projectName, Object adapted) {
+        try {
+            String host = invokeStringMethod(adapted, "getHost");
+            if (host == null || host.isEmpty()) {
+                // Try alternative method names
+                host = invokeStringMethod(adapted, "getSystemHost");
+            }
+            if (host == null || host.isEmpty()) {
+                return null;
             }
 
+            int port = 443;
+            try {
+                Object portObj = adapted.getClass().getMethod("getPort").invoke(adapted);
+                if (portObj instanceof Number) {
+                    port = ((Number) portObj).intValue();
+                } else if (portObj instanceof String && !((String) portObj).isEmpty()) {
+                    port = Integer.parseInt((String) portObj);
+                }
+            } catch (Exception e) {
+                // keep default
+            }
+
+            String client = invokeStringMethod(adapted, "getClient");
+            String user = invokeStringMethod(adapted, "getUser");
+            String sysId = invokeStringMethod(adapted, "getSystemId");
+
+            String displayName = (sysId != null && !sysId.isEmpty())
+                    ? sysId + " [" + projectName + "]"
+                    : projectName;
+
             return new SapSystemConnection(
-                    project.getName(), host, port,
+                    displayName, host, port,
                     client != null ? client : "000",
                     user != null ? user : "",
                     "" /* password not available through adapter */,
-                    true /* useSsl */
-            );
+                    true);
         } catch (Exception e) {
-            System.err.println("AdtConnectionManager: reflection on IDestinationData failed: "
-                    + e.getMessage());
+            System.err.println("AdtConnectionManager: reflection failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Try to read destination properties stored as persistent project properties.
+     */
+    private SapSystemConnection extractFromProperties(
+            org.eclipse.core.resources.IProject project) {
+        String projectName = project.getName();
+
+        try {
+            // Try multiple qualifier patterns used by different ADT versions
+            String[] qualifiers = {
+                "com.sap.adt.project",
+                "com.sap.adt.destinations",
+                "com.sap.adt.tools.core"
+            };
+
+            for (String qualifier : qualifiers) {
+                String host = project.getPersistentProperty(
+                        new org.eclipse.core.runtime.QualifiedName(qualifier, "host"));
+                if (host != null && !host.isEmpty()) {
+                    String portStr = project.getPersistentProperty(
+                            new org.eclipse.core.runtime.QualifiedName(qualifier, "port"));
+                    String client = project.getPersistentProperty(
+                            new org.eclipse.core.runtime.QualifiedName(qualifier, "client"));
+                    String user = project.getPersistentProperty(
+                            new org.eclipse.core.runtime.QualifiedName(qualifier, "user"));
+
+                    int port = 443;
+                    if (portStr != null && !portStr.isEmpty()) {
+                        try { port = Integer.parseInt(portStr); } catch (NumberFormatException ignored) {}
+                    }
+
+                    return new SapSystemConnection(
+                            projectName, host, port,
+                            client != null ? client : "000",
+                            user != null ? user : "",
+                            "", true);
+                }
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+
+        return null;
+    }
+
+    private static String invokeStringMethod(Object obj, String methodName) {
+        try {
+            java.lang.reflect.Method m = obj.getClass().getMethod(methodName);
+            Object result = m.invoke(obj);
+            return result instanceof String ? (String) result : null;
+        } catch (Exception e) {
             return null;
         }
     }

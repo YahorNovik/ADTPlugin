@@ -1,6 +1,7 @@
 package com.sap.ai.assistant.agent;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import com.sap.ai.assistant.llm.LlmException;
@@ -72,7 +73,9 @@ public class AgentLoop {
      */
     public void run(ChatConversation conversation, AgentCallback callback) {
         try {
-            List<ToolDefinition> toolDefinitions = toolRegistry.getAllDefinitions();
+            List<ToolDefinition> toolDefinitions = (toolRegistry != null)
+                    ? toolRegistry.getAllDefinitions()
+                    : Collections.emptyList();
 
             for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
                 // Check for thread interruption (supports Eclipse Job cancellation)

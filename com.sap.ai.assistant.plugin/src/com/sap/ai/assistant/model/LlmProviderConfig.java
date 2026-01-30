@@ -7,22 +7,50 @@ package com.sap.ai.assistant.model;
 public class LlmProviderConfig {
 
     /**
-     * Supported LLM providers, each with sensible defaults.
+     * Supported LLM providers, each with sensible defaults and predefined models.
      */
     public enum Provider {
-        ANTHROPIC("Anthropic", "claude-sonnet-4-20250514", "https://api.anthropic.com"),
-        OPENAI("OpenAI", "gpt-4o", "https://api.openai.com"),
-        GOOGLE("Google", "gemini-2.0-flash", "https://generativelanguage.googleapis.com"),
-        MISTRAL("Mistral", "mistral-large-latest", "https://api.mistral.ai");
+        ANTHROPIC("Anthropic", "claude-sonnet-4-20250514", "https://api.anthropic.com",
+                new String[]{
+                    "claude-sonnet-4-20250514",
+                    "claude-opus-4-20250514",
+                    "claude-haiku-3-5-20241022",
+                    "claude-3-5-sonnet-20241022"
+                }),
+        OPENAI("OpenAI", "gpt-4o", "https://api.openai.com",
+                new String[]{
+                    "gpt-4o",
+                    "gpt-4o-mini",
+                    "gpt-4-turbo",
+                    "o1",
+                    "o1-mini",
+                    "o3-mini"
+                }),
+        GOOGLE("Google", "gemini-2.0-flash", "https://generativelanguage.googleapis.com",
+                new String[]{
+                    "gemini-2.0-flash",
+                    "gemini-2.0-pro",
+                    "gemini-1.5-pro",
+                    "gemini-1.5-flash"
+                }),
+        MISTRAL("Mistral", "mistral-large-latest", "https://api.mistral.ai",
+                new String[]{
+                    "mistral-large-latest",
+                    "mistral-medium-latest",
+                    "mistral-small-latest",
+                    "open-mistral-nemo"
+                });
 
         private final String displayName;
         private final String defaultModel;
         private final String defaultBaseUrl;
+        private final String[] availableModels;
 
-        Provider(String displayName, String defaultModel, String defaultBaseUrl) {
+        Provider(String displayName, String defaultModel, String defaultBaseUrl, String[] availableModels) {
             this.displayName = displayName;
             this.defaultModel = defaultModel;
             this.defaultBaseUrl = defaultBaseUrl;
+            this.availableModels = availableModels;
         }
 
         public String getDisplayName() {
@@ -36,6 +64,10 @@ public class LlmProviderConfig {
         public String getDefaultBaseUrl() {
             return defaultBaseUrl;
         }
+
+        public String[] getAvailableModels() {
+            return availableModels;
+        }
     }
 
     private Provider provider;
@@ -44,15 +76,6 @@ public class LlmProviderConfig {
     private String baseUrl;
     private int maxTokens;
 
-    /**
-     * Creates a new LLM provider configuration.
-     *
-     * @param provider  the LLM provider
-     * @param apiKey    the API key for authentication
-     * @param model     the model identifier (pass {@code null} to use the provider default)
-     * @param baseUrl   the base URL (pass {@code null} to use the provider default)
-     * @param maxTokens the maximum number of tokens in a response
-     */
     public LlmProviderConfig(Provider provider, String apiKey, String model, String baseUrl, int maxTokens) {
         this.provider = provider;
         this.apiKey = apiKey;
@@ -61,58 +84,20 @@ public class LlmProviderConfig {
         this.maxTokens = maxTokens;
     }
 
-    /**
-     * Creates a configuration with provider defaults for model, base URL, and
-     * a default max-tokens value of 4096.
-     *
-     * @param provider the LLM provider
-     * @param apiKey   the API key
-     */
     public LlmProviderConfig(Provider provider, String apiKey) {
         this(provider, apiKey, null, null, 4096);
     }
 
-    // -- Getters / Setters -------------------------------------------------------
-
-    public Provider getProvider() {
-        return provider;
-    }
-
-    public void setProvider(Provider provider) {
-        this.provider = provider;
-    }
-
-    public String getApiKey() {
-        return apiKey;
-    }
-
-    public void setApiKey(String apiKey) {
-        this.apiKey = apiKey;
-    }
-
-    public String getModel() {
-        return model;
-    }
-
-    public void setModel(String model) {
-        this.model = model;
-    }
-
-    public String getBaseUrl() {
-        return baseUrl;
-    }
-
-    public void setBaseUrl(String baseUrl) {
-        this.baseUrl = baseUrl;
-    }
-
-    public int getMaxTokens() {
-        return maxTokens;
-    }
-
-    public void setMaxTokens(int maxTokens) {
-        this.maxTokens = maxTokens;
-    }
+    public Provider getProvider() { return provider; }
+    public void setProvider(Provider provider) { this.provider = provider; }
+    public String getApiKey() { return apiKey; }
+    public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
+    public String getBaseUrl() { return baseUrl; }
+    public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+    public int getMaxTokens() { return maxTokens; }
+    public void setMaxTokens(int maxTokens) { this.maxTokens = maxTokens; }
 
     @Override
     public String toString() {

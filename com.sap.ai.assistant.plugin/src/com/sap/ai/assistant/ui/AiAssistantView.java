@@ -112,8 +112,9 @@ public class AiAssistantView extends ViewPart {
     private void createToolbar(Composite parent) {
         Composite toolbar = new Composite(parent, SWT.NONE);
         GridLayout tl = new GridLayout(3, false);
-        tl.marginWidth = 4;
-        tl.marginHeight = 2;
+        tl.marginWidth = 8;
+        tl.marginHeight = 4;
+        tl.horizontalSpacing = 8;
         toolbar.setLayout(tl);
         toolbar.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
@@ -123,11 +124,12 @@ public class AiAssistantView extends ViewPart {
 
         // Model label
         modelLabel = new Label(toolbar, SWT.NONE);
+        modelLabel.setForeground(Display.getDefault().getSystemColor(SWT.COLOR_DARK_GRAY));
         modelLabel.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
 
         // Preferences button
         Button prefsButton = new Button(toolbar, SWT.PUSH);
-        prefsButton.setText("Preferences...");
+        prefsButton.setText("Settings");
         prefsButton.addListener(SWT.Selection, e -> {
             PreferencesUtil.createPreferenceDialogOn(
                     getSite().getShell(),
@@ -135,6 +137,10 @@ public class AiAssistantView extends ViewPart {
                     null, null).open();
             updateModelLabel();
         });
+
+        // Separator below toolbar
+        Label sep = new Label(parent, SWT.SEPARATOR | SWT.HORIZONTAL);
+        sep.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
     }
 
     private void createChatArea(Composite parent) {
@@ -315,13 +321,21 @@ public class AiAssistantView extends ViewPart {
                     return Status.OK_STATUS;
 
                 } catch (Exception e) {
+                    String errorDetail = e.getMessage();
+                    if (errorDetail == null || errorDetail.isEmpty()) {
+                        errorDetail = e.getClass().getSimpleName();
+                    }
+                    if (e instanceof java.net.ConnectException) {
+                        errorDetail = "Connection failed. Check your network and API key settings.";
+                    }
+                    final String msg = errorDetail;
                     display.asyncExec(() -> {
                         chatComposite.finishStreamingMessage();
-                        chatComposite.addUserMessage("Error: " + e.getMessage());
+                        chatComposite.addUserMessage("Error: " + msg);
                         chatComposite.setRunning(false);
                     });
                     return new Status(IStatus.ERROR, Activator.PLUGIN_ID,
-                            "Agent loop failed: " + e.getMessage(), e);
+                            "Agent loop failed: " + msg, e);
                 } finally {
                     if (restClient != null) {
                         try {

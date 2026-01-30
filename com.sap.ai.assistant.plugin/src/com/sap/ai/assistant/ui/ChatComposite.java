@@ -264,24 +264,28 @@ public class ChatComposite extends Composite {
     private void createContextBar() {
         contextLabel = new Label(this, SWT.NONE);
         contextLabel.setText("");
-        contextLabel.setForeground(new Color(getDisplay(), 120, 120, 120));
+        contextLabel.setForeground(new Color(getDisplay(), 100, 100, 100));
         GridData cgd = new GridData(SWT.FILL, SWT.CENTER, true, false);
-        cgd.horizontalIndent = 6;
+        cgd.horizontalIndent = 8;
         contextLabel.setLayoutData(cgd);
     }
 
     private void createInputArea() {
+        // Separator above input area
+        Label inputSep = new Label(this, SWT.SEPARATOR | SWT.HORIZONTAL);
+        inputSep.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
         Composite inputArea = new Composite(this, SWT.NONE);
-        GridLayout il = new GridLayout(4, false);
-        il.marginWidth = 4;
-        il.marginHeight = 4;
+        GridLayout il = new GridLayout(1, false);
+        il.marginWidth = 8;
+        il.marginHeight = 6;
         inputArea.setLayout(il);
         inputArea.setLayoutData(new GridData(SWT.FILL, SWT.END, true, false));
 
-        // Multi-line input (3 rows)
+        // Multi-line input
         inputText = new StyledText(inputArea, SWT.MULTI | SWT.BORDER | SWT.WRAP | SWT.V_SCROLL);
         GridData inputGd = new GridData(SWT.FILL, SWT.CENTER, true, false);
-        inputGd.heightHint = 52; // ~3 lines
+        inputGd.heightHint = 60;
         inputText.setLayoutData(inputGd);
 
         // Enter sends, Shift+Enter inserts newline
@@ -291,17 +295,29 @@ public class ChatComposite extends Composite {
                     event.doit = false;
                     doSend();
                 }
-                // Shift+Enter: default behaviour -- newline
             }
         });
 
-        // Send button
-        sendButton = new Button(inputArea, SWT.PUSH);
-        sendButton.setText("Send");
-        sendButton.addListener(SWT.Selection, e -> doSend());
+        // Buttons row
+        Composite buttonsRow = new Composite(inputArea, SWT.NONE);
+        GridLayout bl = new GridLayout(3, false);
+        bl.marginWidth = 0;
+        bl.marginHeight = 0;
+        bl.horizontalSpacing = 6;
+        buttonsRow.setLayout(bl);
+        buttonsRow.setLayoutData(new GridData(SWT.END, SWT.CENTER, true, false));
+
+        // New Chat button
+        newChatButton = new Button(buttonsRow, SWT.PUSH);
+        newChatButton.setText("New Chat");
+        newChatButton.addListener(SWT.Selection, e -> {
+            if (newChatHandler != null) {
+                newChatHandler.run();
+            }
+        });
 
         // Stop button
-        stopButton = new Button(inputArea, SWT.PUSH);
+        stopButton = new Button(buttonsRow, SWT.PUSH);
         stopButton.setText("Stop");
         stopButton.setEnabled(false);
         stopButton.addListener(SWT.Selection, e -> {
@@ -310,14 +326,10 @@ public class ChatComposite extends Composite {
             }
         });
 
-        // New Chat button
-        newChatButton = new Button(inputArea, SWT.PUSH);
-        newChatButton.setText("New Chat");
-        newChatButton.addListener(SWT.Selection, e -> {
-            if (newChatHandler != null) {
-                newChatHandler.run();
-            }
-        });
+        // Send button (primary action, last on right)
+        sendButton = new Button(buttonsRow, SWT.PUSH);
+        sendButton.setText("  Send  ");
+        sendButton.addListener(SWT.Selection, e -> doSend());
     }
 
     // ==================================================================
