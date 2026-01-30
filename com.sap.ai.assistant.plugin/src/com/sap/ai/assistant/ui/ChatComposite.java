@@ -14,6 +14,7 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 
+import com.sap.ai.assistant.model.DiffRequest;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolResult;
 
@@ -162,6 +163,18 @@ public class ChatComposite extends Composite {
         if (lastToolCallWidget != null && !lastToolCallWidget.isDisposed()) {
             lastToolCallWidget.setResult(result);
         }
+    }
+
+    /**
+     * Add a diff preview widget to the message area. The widget shows a
+     * unified diff with Accept / Reject / Edit buttons.
+     *
+     * @param diffRequest the proposed change
+     */
+    public void addDiffPreview(DiffRequest diffRequest) {
+        if (isDisposed()) return;
+        new DiffPreviewWidget(messagesContainer, SWT.NONE, diffRequest);
+        layoutAndScroll();
     }
 
     /**

@@ -20,6 +20,9 @@ public class EditorContextTracker implements IPartListener2 {
     /** The latest extracted context. Volatile for safe cross-thread reads. */
     private volatile AdtContext currentContext;
 
+    /** Optional listener notified when the context changes (e.g. editor switched). */
+    private Runnable onContextChanged;
+
     /**
      * Returns the most recently extracted editor context.
      *
@@ -27,6 +30,13 @@ public class EditorContextTracker implements IPartListener2 {
      */
     public AdtContext getCurrentContext() {
         return currentContext;
+    }
+
+    /**
+     * Set a listener that is called whenever the editor context changes.
+     */
+    public void setOnContextChanged(Runnable listener) {
+        this.onContextChanged = listener;
     }
 
     // ------------------------------------------------------------------
@@ -94,6 +104,9 @@ public class EditorContextTracker implements IPartListener2 {
                 AdtContext ctx = AdtEditorHelper.extractContext(editor);
                 if (ctx != null) {
                     currentContext = ctx;
+                    if (onContextChanged != null) {
+                        try { onContextChanged.run(); } catch (Exception ignored) {}
+                    }
                 }
             }
         } catch (Exception e) {

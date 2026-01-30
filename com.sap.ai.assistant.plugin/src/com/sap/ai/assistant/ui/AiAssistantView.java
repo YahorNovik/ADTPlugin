@@ -16,6 +16,8 @@ import org.eclipse.ui.IPartService;
 import org.eclipse.ui.dialogs.PreferencesUtil;
 import org.eclipse.ui.part.ViewPart;
 
+import java.util.List;
+
 import com.sap.ai.assistant.Activator;
 import com.sap.ai.assistant.agent.AgentCallback;
 import com.sap.ai.assistant.agent.AgentLoop;
@@ -27,6 +29,7 @@ import com.sap.ai.assistant.llm.LlmProviderFactory;
 import com.sap.ai.assistant.model.AdtContext;
 import com.sap.ai.assistant.model.ChatConversation;
 import com.sap.ai.assistant.model.ChatMessage;
+import com.sap.ai.assistant.model.DiffRequest;
 import com.sap.ai.assistant.model.LlmProviderConfig;
 import com.sap.ai.assistant.model.SapSystemConnection;
 import com.sap.ai.assistant.model.ToolCall;
@@ -51,6 +54,7 @@ public class AiAssistantView extends ViewPart {
     // ---- Widgets ----
     private SystemSelectorComposite systemSelector;
     private Label modelLabel;
+    private Button autoFixButton;
     private ChatComposite chatComposite;
 
     // ---- State ----
@@ -111,7 +115,7 @@ public class AiAssistantView extends ViewPart {
 
     private void createToolbar(Composite parent) {
         Composite toolbar = new Composite(parent, SWT.NONE);
-        GridLayout tl = new GridLayout(3, false);
+        GridLayout tl = new GridLayout(4, false);
         tl.marginWidth = 8;
         tl.marginHeight = 4;
         tl.horizontalSpacing = 8;
@@ -126,6 +130,12 @@ public class AiAssistantView extends ViewPart {
         modelLabel = new Label(toolbar, SWT.NONE);
         modelLabel.setForeground(Display.getDefault().getSystemColor(SWT.COLOR_DARK_GRAY));
         modelLabel.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+
+        // Auto-Fix button
+        autoFixButton = new Button(toolbar, SWT.PUSH);
+        autoFixButton.setText("Auto-Fix");
+        autoFixButton.setToolTipText("Fix all syntax errors and ATC findings in the current editor object");
+        autoFixButton.addListener(SWT.Selection, e -> handleAutoFix());
 
         // Preferences button
         Button prefsButton = new Button(toolbar, SWT.PUSH);
@@ -154,6 +164,9 @@ public class AiAssistantView extends ViewPart {
 
     private void registerEditorContextTracker() {
         contextTracker = new EditorContextTracker();
+        contextTracker.setOnContextChanged(() -> {
+            Display.getDefault().asyncExec(this::updateAutoFixButton);
+        });
         try {
             IPartService ps = getSite().getWorkbenchWindow().getPartService();
             if (ps != null) {
@@ -294,8 +307,8 @@ public class AiAssistantView extends ViewPart {
                         toolRegistry = new SapToolRegistry(restClient);
                     }
 
-                    // Create and run agent loop
-                    AgentLoop agent = new AgentLoop(llmProvider, toolRegistry);
+                    // Create and run agent loop (pass restClient for diff preview)
+                    AgentLoop agent = new AgentLoop(llmProvider, toolRegistry, restClient);
 
                     agent.run(finalConversation, new AgentCallback() {
 
@@ -318,10 +331,21 @@ public class AiAssistantView extends ViewPart {
                         }
 
                         @Override
+                        public void onDiffApprovalNeeded(DiffRequest diffRequest) {
+                            if (monitor.isCanceled()) {
+                                diffRequest.setDecision(DiffRequest.Decision.REJECTED);
+                                return;
+                            }
+                            // Show diff widget in UI; agent thread blocks on awaitDecision()
+                            display.asyncExec(() -> chatComposite.addDiffPreview(diffRequest));
+                        }
+
+                        @Override
                         public void onComplete(ChatMessage finalMessage) {
                             display.asyncExec(() -> {
                                 chatComposite.finishStreamingMessage();
                                 chatComposite.setRunning(false);
+                                updateAutoFixButton();
                             });
                         }
 
@@ -332,6 +356,7 @@ public class AiAssistantView extends ViewPart {
                                 chatComposite.addUserMessage(
                                         "Error: " + error.getMessage());
                                 chatComposite.setRunning(false);
+                                updateAutoFixButton();
                             });
                         }
                     });
@@ -394,6 +419,60 @@ public class AiAssistantView extends ViewPart {
         if (conversationManager != null) {
             conversationManager = new ConversationManager();
         }
+    }
+
+    // ==================================================================
+    // Auto-Fix
+    // ==================================================================
+
+    private void handleAutoFix() {
+        AdtContext context = (contextTracker != null) ? contextTracker.getCurrentContext() : null;
+
+        if (context == null || context.getObjectName() == null || context.getObjectName().isEmpty()) {
+            chatComposite.addUserMessage(
+                    "Error: No ABAP object is currently open in the editor. "
+                    + "Please open an ABAP object first.");
+            return;
+        }
+
+        String prompt = buildAutoFixPrompt(context);
+        handleSend(prompt);
+    }
+
+    private String buildAutoFixPrompt(AdtContext context) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("AUTO-FIX REQUEST: Please fix all errors and issues in the ABAP object \"");
+        prompt.append(context.getObjectName());
+        prompt.append("\".\n\n");
+
+        prompt.append("Please follow this workflow:\n");
+        prompt.append("1. Read the current source code using sap_get_source\n");
+        prompt.append("2. Run a syntax check using sap_syntax_check\n");
+        prompt.append("3. Run ATC checks using sap_atc_run\n");
+        prompt.append("4. Analyze ALL errors, warnings, and ATC findings\n");
+        prompt.append("5. Fix all issues in the source code\n");
+        prompt.append("6. Write the corrected source code using sap_write_and_check\n");
+        prompt.append("7. Verify the fix by running syntax check again\n");
+        prompt.append("8. If errors remain, iterate until all issues are resolved\n\n");
+
+        List<String> errors = context.getErrors();
+        if (errors != null && !errors.isEmpty()) {
+            prompt.append("Known errors/warnings from the editor:\n");
+            for (String error : errors) {
+                prompt.append("- ").append(error).append("\n");
+            }
+            prompt.append("\n");
+        }
+
+        prompt.append("Fix everything and ensure the object compiles cleanly with no ATC findings.");
+        return prompt.toString();
+    }
+
+    private void updateAutoFixButton() {
+        if (autoFixButton == null || autoFixButton.isDisposed()) return;
+        boolean isRunning = currentJob != null
+                && currentJob.getState() == Job.RUNNING;
+        autoFixButton.setEnabled(!isRunning);
     }
 
     // ==================================================================

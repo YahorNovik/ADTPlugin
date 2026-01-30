@@ -1,6 +1,7 @@
 package com.sap.ai.assistant.agent;
 
 import com.sap.ai.assistant.model.ChatMessage;
+import com.sap.ai.assistant.model.DiffRequest;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolResult;
 
@@ -47,6 +48,21 @@ public interface AgentCallback {
      * @param finalMessage the final assistant message
      */
     void onComplete(ChatMessage finalMessage);
+
+    /**
+     * Called when a tool proposes a source code change that requires user
+     * approval before being applied. The implementation MUST eventually call
+     * {@link DiffRequest#setDecision} to unblock the agent loop.
+     * <p>
+     * This method is called on the agent loop thread. Implementations should
+     * dispatch UI work via {@code Display.asyncExec()} and let this method
+     * return immediately -- the agent loop will block on
+     * {@link DiffRequest#awaitDecision()}.
+     * </p>
+     *
+     * @param diffRequest the proposed change details
+     */
+    void onDiffApprovalNeeded(DiffRequest diffRequest);
 
     /**
      * Called when the agent loop encounters an unrecoverable error.
