@@ -25,4 +25,76 @@
             class="com.sap.ai.assistant.preferences.AiAssistantPreferencePage">
         </page>
     </extension>
+
+    <!-- Commands -->
+    <extension point="org.eclipse.ui.commands">
+        <category
+            id="com.sap.ai.assistant.commands.category"
+            name="SAP AI Assistant">
+        </category>
+        <command
+            id="com.sap.ai.assistant.commands.openView"
+            name="Open AI Assistant"
+            description="Open the SAP AI Assistant view and focus input"
+            categoryId="com.sap.ai.assistant.commands.category">
+        </command>
+        <command
+            id="com.sap.ai.assistant.commands.inlineEdit"
+            name="AI Inline Edit"
+            description="Edit selected code with AI assistance"
+            categoryId="com.sap.ai.assistant.commands.category">
+        </command>
+        <command
+            id="com.sap.ai.assistant.commands.fixErrors"
+            name="AI Fix Errors"
+            description="Send current errors to AI Assistant for fixing"
+            categoryId="com.sap.ai.assistant.commands.category">
+        </command>
+    </extension>
+
+    <!-- Handlers -->
+    <extension point="org.eclipse.ui.handlers">
+        <handler
+            commandId="com.sap.ai.assistant.commands.openView"
+            class="com.sap.ai.assistant.handlers.OpenAiViewHandler">
+        </handler>
+        <handler
+            commandId="com.sap.ai.assistant.commands.inlineEdit"
+            class="com.sap.ai.assistant.handlers.InlineEditHandler">
+        </handler>
+        <handler
+            commandId="com.sap.ai.assistant.commands.fixErrors"
+            class="com.sap.ai.assistant.handlers.FixErrorsHandler">
+        </handler>
+    </extension>
+
+    <!-- Key Bindings (M1 = Cmd on Mac / Ctrl on Win, M2 = Shift) -->
+    <extension point="org.eclipse.ui.bindings">
+        <key
+            commandId="com.sap.ai.assistant.commands.openView"
+            schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+            sequence="M1+M2+A"
+            contextId="org.eclipse.ui.contexts.window">
+        </key>
+        <key
+            commandId="com.sap.ai.assistant.commands.inlineEdit"
+            schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+            sequence="M1+M2+K"
+            contextId="org.eclipse.ui.contexts.window">
+        </key>
+        <key
+            commandId="com.sap.ai.assistant.commands.fixErrors"
+            schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+            sequence="M1+M2+E"
+            contextId="org.eclipse.ui.contexts.window">
+        </key>
+    </extension>
+
+    <!-- Quick Fix: "Fix with AI Assistant" for problem markers -->
+    <extension point="org.eclipse.ui.ide.markerResolution">
+        <markerResolutionGenerator
+            markerType="org.eclipse.core.resources.problemmarker"
+            class="com.sap.ai.assistant.handlers.AiQuickFixGenerator">
+        </markerResolutionGenerator>
+    </extension>
 </plugin>

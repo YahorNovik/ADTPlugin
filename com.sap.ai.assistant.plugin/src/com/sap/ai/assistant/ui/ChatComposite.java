@@ -1,9 +1,13 @@
 package com.sap.ai.assistant.ui;
 
+import java.util.List;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.ScrolledComposite;
+import org.eclipse.swt.custom.StyleRange;
 import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.layout.GridData;
@@ -14,6 +18,8 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 
+import com.sap.ai.assistant.context.AdtEditorHelper;
+import com.sap.ai.assistant.model.AdtContext;
 import com.sap.ai.assistant.model.DiffRequest;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolResult;
@@ -41,6 +47,7 @@ public class ChatComposite extends Composite {
     private MessageRenderer messageRenderer;
     private StyledText currentStreamingText;
     private ToolCallWidget lastToolCallWidget;
+    private MentionPopup mentionPopup;
 
     // ---- Callbacks ----
     private Consumer<String> sendHandler;
@@ -306,15 +313,43 @@ public class ChatComposite extends Composite {
         inputGd.heightHint = 60;
         inputText.setLayoutData(inputGd);
 
+        // Mention popup key handling (must be registered before send listener)
+        inputText.addListener(SWT.KeyDown, event -> {
+            if (mentionPopup != null && mentionPopup.isVisible()) {
+                if (event.keyCode == SWT.ARROW_DOWN) {
+                    mentionPopup.moveSelection(1);
+                    event.doit = false;
+                    return;
+                } else if (event.keyCode == SWT.ARROW_UP) {
+                    mentionPopup.moveSelection(-1);
+                    event.doit = false;
+                    return;
+                } else if (event.keyCode == SWT.CR || event.keyCode == SWT.TAB) {
+                    mentionPopup.acceptSelection();
+                    event.doit = false;
+                    return;
+                } else if (event.keyCode == SWT.ESC) {
+                    mentionPopup.dispose();
+                    event.doit = false;
+                    return;
+                }
+            }
+        });
+
         // Enter sends, Shift+Enter inserts newline
         inputText.addListener(SWT.KeyDown, event -> {
             if (event.keyCode == SWT.CR || event.keyCode == SWT.KEYPAD_CR) {
                 if ((event.stateMask & SWT.SHIFT) == 0) {
+                    // Don't send if mention popup just consumed this Enter
+                    if (mentionPopup != null && mentionPopup.isVisible()) return;
                     event.doit = false;
                     doSend();
                 }
             }
         });
+
+        // Detect @ mentions while typing
+        inputText.addListener(SWT.Modify, event -> handleMentionDetection());
 
         // Buttons row
         Composite buttonsRow = new Composite(inputArea, SWT.NONE);
@@ -358,10 +393,159 @@ public class ChatComposite extends Composite {
         if (inputText == null || inputText.isDisposed()) return;
         String text = inputText.getText().trim();
         if (text.isEmpty()) return;
+
+        // Dismiss mention popup if open
+        if (mentionPopup != null) mentionPopup.dispose();
+
+        // Resolve @ mentions before sending
+        text = resolveMentions(text);
+
         inputText.setText("");
         if (sendHandler != null) {
             sendHandler.accept(text);
         }
+    }
+
+    // ==================================================================
+    // @ Mention support
+    // ==================================================================
+
+    private void handleMentionDetection() {
+        if (inputText == null || inputText.isDisposed()) return;
+        String text = inputText.getText();
+        int caret = inputText.getCaretOffset();
+
+        // Find the last @ before caret
+        int atPos = text.lastIndexOf('@', caret - 1);
+        if (atPos < 0) {
+            if (mentionPopup != null) mentionPopup.dispose();
+            return;
+        }
+
+        // Check there is no space/newline between @ and caret
+        String afterAt = text.substring(atPos + 1, caret);
+        if (afterAt.contains(" ") || afterAt.contains("\n")) {
+            if (mentionPopup != null) mentionPopup.dispose();
+            return;
+        }
+
+        // Show/update popup
+        if (mentionPopup == null) {
+            mentionPopup = new MentionPopup(inputText, this::insertMention);
+        }
+        mentionPopup.show(afterAt);
+    }
+
+    private void insertMention(String mention) {
+        if (inputText == null || inputText.isDisposed()) return;
+        String text = inputText.getText();
+        int caret = inputText.getCaretOffset();
+
+        // Find the @ that started this mention
+        int atPos = text.lastIndexOf('@', caret - 1);
+        if (atPos < 0) return;
+
+        // Replace from @ to caret with the mention
+        String before = text.substring(0, atPos);
+        String after = text.substring(caret);
+        String newText = before + mention + " " + after;
+        inputText.setText(newText);
+        int newCaret = atPos + mention.length() + 1;
+        inputText.setCaretOffset(newCaret);
+
+        // Apply bold+blue styling to the mention
+        StyleRange style = new StyleRange();
+        style.start = atPos;
+        style.length = mention.length();
+        style.fontStyle = SWT.BOLD;
+        style.foreground = getDisplay().getSystemColor(SWT.COLOR_DARK_BLUE);
+        inputText.setStyleRange(style);
+    }
+
+    /**
+     * Resolves @ mentions by replacing them with actual content from the
+     * active editor context.
+     */
+    private String resolveMentions(String text) {
+        if (!text.contains("@")) return text;
+
+        AdtContext context = getCurrentEditorContext();
+
+        // @errors → inject current errors
+        if (text.contains("@errors")) {
+            String replacement;
+            if (context != null && context.getErrors() != null
+                    && !context.getErrors().isEmpty()) {
+                StringBuilder sb = new StringBuilder("\n[Current errors:\n");
+                for (String e : context.getErrors()) {
+                    sb.append("- ").append(e).append("\n");
+                }
+                sb.append("]");
+                replacement = sb.toString();
+            } else {
+                replacement = "\n[No errors found in current editor]";
+            }
+            text = text.replace("@errors", replacement);
+        }
+
+        // @selection → inject selected text
+        if (text.contains("@selection")) {
+            String replacement;
+            if (context != null && context.getSelectedText() != null
+                    && !context.getSelectedText().isEmpty()) {
+                replacement = "\n[Selected code:\n```abap\n"
+                        + context.getSelectedText() + "\n```\n]";
+            } else {
+                replacement = "\n[No text selected in editor]";
+            }
+            text = text.replace("@selection", replacement);
+        }
+
+        // @source → inject full source
+        if (text.contains("@source")) {
+            String replacement;
+            if (context != null && context.getSourceCode() != null
+                    && !context.getSourceCode().isEmpty()) {
+                replacement = "\n[Full source of "
+                        + (context.getObjectName() != null ? context.getObjectName() : "object")
+                        + ":\n```abap\n" + context.getSourceCode() + "\n```\n]";
+            } else {
+                replacement = "\n[No source code available]";
+            }
+            text = text.replace("@source", replacement);
+        }
+
+        // @OBJECT_NAME → hint for the agent to fetch it
+        Pattern p = Pattern.compile("@([A-Za-z_][A-Za-z0-9_]*)");
+        Matcher m = p.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String name = m.group(1);
+            // Skip already-resolved standard mentions
+            if (!name.equals("errors") && !name.equals("selection")
+                    && !name.equals("source")) {
+                m.appendReplacement(sb,
+                        "[Please use sap_get_source to read the source of object \""
+                        + name.toUpperCase() + "\"]");
+            }
+        }
+        m.appendTail(sb);
+        text = sb.toString();
+
+        return text;
+    }
+
+    private AdtContext getCurrentEditorContext() {
+        try {
+            org.eclipse.ui.IWorkbenchPage page = org.eclipse.ui.PlatformUI
+                    .getWorkbench().getActiveWorkbenchWindow().getActivePage();
+            if (page != null && page.getActiveEditor() != null) {
+                return AdtEditorHelper.extractContext(page.getActiveEditor());
+            }
+        } catch (Exception e) {
+            // Workbench may not be available
+        }
+        return null;
     }
 
     private void layoutAndScroll() {

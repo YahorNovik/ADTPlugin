@@ -186,6 +186,19 @@ public class AiAssistantView extends ViewPart {
     }
 
     // ==================================================================
+    // Public API for external handlers (commands, quick fixes)
+    // ==================================================================
+
+    /**
+     * Programmatically sends a message as if the user typed it.
+     * Called by keyboard shortcut handlers and quick-fix resolutions.
+     */
+    public void sendMessage(String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        handleSend(text.trim());
+    }
+
+    // ==================================================================
     // Send / Stop / New Chat handlers
     // ==================================================================
 
