@@ -42,6 +42,7 @@ import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
 import com.sap.ai.assistant.preferences.PreferenceConstants;
+import com.sap.ai.assistant.sap.AdtCredentialProvider;
 import com.sap.ai.assistant.sap.AdtRestClient;
 import com.sap.ai.assistant.tools.SapTool;
 import com.sap.ai.assistant.tools.SapToolRegistry;
@@ -255,27 +256,58 @@ public class AiAssistantView extends ViewPart {
             chatComposite.setContextLabel("Context: " + ctxInfo);
         }
 
-        // Selected SAP system — prompt for password if missing
+        // Selected SAP system — try ADT credentials before prompting for password
         SapSystemConnection selectedSystem = systemSelector.getSelectedSystem();
+        AdtCredentialProvider.AdtSessionData adtSessionData = null;
+
         if (selectedSystem != null
                 && (selectedSystem.getPassword() == null || selectedSystem.getPassword().isEmpty())) {
-            org.eclipse.jface.dialogs.InputDialog passDialog =
-                    new org.eclipse.jface.dialogs.InputDialog(
-                            getSite().getShell(),
-                            "SAP Login",
-                            "Enter password for " + selectedSystem.getProjectName()
-                                    + " (user: " + selectedSystem.getUser() + "):",
-                            "", null) {
-                        @Override
-                        protected int getInputTextStyle() {
-                            return SWT.SINGLE | SWT.BORDER | SWT.PASSWORD;
-                        }
-                    };
-            if (passDialog.open() == org.eclipse.jface.window.Window.OK) {
-                selectedSystem.setPassword(passDialog.getValue());
-            } else {
-                chatComposite.setRunning(false);
-                return;
+
+            boolean credentialsResolved = false;
+
+            // Strategy 1: Try Eclipse Secure Storage (ADT saves passwords here)
+            if (selectedSystem.hasAdtProject() && selectedSystem.getDestinationId() != null) {
+                String storedPassword = AdtCredentialProvider.tryGetPasswordFromSecureStore(
+                        selectedSystem.getDestinationId());
+                if (storedPassword != null && !storedPassword.isEmpty()) {
+                    selectedSystem.setPassword(storedPassword);
+                    credentialsResolved = true;
+                    System.out.println("AiAssistantView: using ADT stored credentials for "
+                            + selectedSystem.getProjectName());
+                }
+            }
+
+            // Strategy 2: Try extracting session cookies from ADT connection
+            if (!credentialsResolved && selectedSystem.hasAdtProject()) {
+                adtSessionData = AdtCredentialProvider.tryExtractSessionData(
+                        selectedSystem.getAdtProject(), selectedSystem.getBaseUrl());
+                if (adtSessionData != null) {
+                    credentialsResolved = true;
+                    System.out.println("AiAssistantView: using ADT session cookies for "
+                            + selectedSystem.getProjectName());
+                }
+            }
+
+            // Strategy 3: Fall back to password prompt
+            if (!credentialsResolved) {
+                org.eclipse.jface.dialogs.InputDialog passDialog =
+                        new org.eclipse.jface.dialogs.InputDialog(
+                                getSite().getShell(),
+                                "SAP Login",
+                                "Enter password for " + selectedSystem.getProjectName()
+                                        + " (user: " + selectedSystem.getUser() + "):",
+                                "", null) {
+                            @Override
+                            protected int getInputTextStyle() {
+                                return SWT.SINGLE | SWT.BORDER | SWT.PASSWORD;
+                            }
+                        };
+                if (passDialog.open() == org.eclipse.jface.window.Window.OK) {
+                    selectedSystem.setPassword(passDialog.getValue());
+                } else {
+                    chatComposite.setRunning(false);
+                    return;
+                }
             }
         }
 
@@ -305,6 +337,7 @@ public class AiAssistantView extends ViewPart {
         final SapSystemConnection finalSystem = selectedSystem;
         final ChatConversation finalConversation = conversation;
         final AdtContext finalEditorContext = editorContext;
+        final AdtCredentialProvider.AdtSessionData finalAdtSession = adtSessionData;
 
         // Read MCP server configs
         String mcpServersJson = store.getString(PreferenceConstants.MCP_SERVERS);
@@ -347,13 +380,26 @@ public class AiAssistantView extends ViewPart {
                     // Create SAP REST client and tool registry
                     SapToolRegistry toolRegistry = null;
                     if (finalSystem != null) {
-                        restClient = new AdtRestClient(
-                                finalSystem.getBaseUrl(),
-                                finalSystem.getUser(),
-                                finalSystem.getPassword(),
-                                finalSystem.getClient(),
-                                "EN",
-                                false);
+                        if (finalAdtSession != null) {
+                            // Use pre-authenticated ADT session (no password needed)
+                            restClient = new AdtRestClient(
+                                    finalSystem.getBaseUrl(),
+                                    finalSystem.getUser(),
+                                    finalSystem.getClient(),
+                                    "EN",
+                                    false,
+                                    finalAdtSession.getCookieManager(),
+                                    finalAdtSession.getCsrfToken());
+                        } else {
+                            // Standard password-based authentication
+                            restClient = new AdtRestClient(
+                                    finalSystem.getBaseUrl(),
+                                    finalSystem.getUser(),
+                                    finalSystem.getPassword(),
+                                    finalSystem.getClient(),
+                                    "EN",
+                                    false);
+                        }
                         restClient.login();
                         toolRegistry = new SapToolRegistry(restClient, mcpTools);
                     } else if (!mcpTools.isEmpty()) {

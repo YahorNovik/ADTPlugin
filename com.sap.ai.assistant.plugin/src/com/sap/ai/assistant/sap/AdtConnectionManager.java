@@ -246,7 +246,21 @@ public class AdtConnectionManager {
             return null;
         }
 
-        return extractFromAdaptedObject(project.getName(), adapted);
+        SapSystemConnection conn = extractFromAdaptedObject(project.getName(), adapted);
+        if (conn != null) {
+            conn.setAdtProject(project);
+            // Extract destination ID
+            String destId = invokeStringMethod(adapted, "getId");
+            if (destId == null || destId.isEmpty()) {
+                destId = invokeStringMethod(adapted, "getDestinationId");
+            }
+            if (destId == null || destId.isEmpty()) {
+                // Fall back to project name as destination ID
+                destId = project.getName();
+            }
+            conn.setDestinationId(destId);
+        }
+        return conn;
     }
 
     /**
@@ -258,7 +272,19 @@ public class AdtConnectionManager {
             Object adapted = org.eclipse.core.runtime.Platform.getAdapterManager()
                     .loadAdapter(project, "com.sap.adt.destinations.model.IDestinationData");
             if (adapted != null) {
-                return extractFromAdaptedObject(project.getName(), adapted);
+                SapSystemConnection conn = extractFromAdaptedObject(project.getName(), adapted);
+                if (conn != null) {
+                    conn.setAdtProject(project);
+                    String destId = invokeStringMethod(adapted, "getId");
+                    if (destId == null || destId.isEmpty()) {
+                        destId = invokeStringMethod(adapted, "getDestinationId");
+                    }
+                    if (destId == null || destId.isEmpty()) {
+                        destId = project.getName();
+                    }
+                    conn.setDestinationId(destId);
+                }
+                return conn;
             }
         } catch (Exception e) {
             // Adapter not available
@@ -272,7 +298,19 @@ public class AdtConnectionManager {
                 java.lang.reflect.Method getDestData = coreProject.getClass().getMethod("getDestinationData");
                 Object destData = getDestData.invoke(coreProject);
                 if (destData != null) {
-                    return extractFromAdaptedObject(project.getName(), destData);
+                    SapSystemConnection conn = extractFromAdaptedObject(project.getName(), destData);
+                    if (conn != null) {
+                        conn.setAdtProject(project);
+                        String destId = invokeStringMethod(destData, "getId");
+                        if (destId == null || destId.isEmpty()) {
+                            destId = invokeStringMethod(destData, "getDestinationId");
+                        }
+                        if (destId == null || destId.isEmpty()) {
+                            destId = project.getName();
+                        }
+                        conn.setDestinationId(destId);
+                    }
+                    return conn;
                 }
             }
         } catch (Exception e) {

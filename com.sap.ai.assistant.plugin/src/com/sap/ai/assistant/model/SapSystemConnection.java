@@ -14,6 +14,15 @@ public class SapSystemConnection {
     private String password;
     private boolean useSsl;
 
+    /** ADT destination ID (used for credential lookup in Eclipse Secure Storage). */
+    private String destinationId;
+
+    /**
+     * Reference to the Eclipse IProject (transient — not serialized).
+     * Used for reflection-based credential extraction from ADT's session.
+     */
+    private transient Object adtProject;
+
     /**
      * Creates a new SAP system connection.
      *
@@ -114,6 +123,30 @@ public class SapSystemConnection {
 
     public void setUseSsl(boolean useSsl) {
         this.useSsl = useSsl;
+    }
+
+    public String getDestinationId() {
+        return destinationId;
+    }
+
+    public void setDestinationId(String destinationId) {
+        this.destinationId = destinationId;
+    }
+
+    public Object getAdtProject() {
+        return adtProject;
+    }
+
+    public void setAdtProject(Object adtProject) {
+        this.adtProject = adtProject;
+    }
+
+    /**
+     * Returns {@code true} if this connection was discovered from an ADT project
+     * and carries a project reference that can be used for credential extraction.
+     */
+    public boolean hasAdtProject() {
+        return adtProject != null;
     }
 
     @Override

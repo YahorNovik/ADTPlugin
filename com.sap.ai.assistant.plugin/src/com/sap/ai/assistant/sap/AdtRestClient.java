@@ -54,6 +54,9 @@ public class AdtRestClient {
     private String csrfToken;
     private boolean loggedIn;
 
+    /** When true, login() was pre-authenticated and should only fetch CSRF token if needed. */
+    private boolean preAuthenticated;
+
     /**
      * Create a new ADT REST client.
      *
@@ -94,6 +97,66 @@ public class AdtRestClient {
         this.httpClient = builder.build();
     }
 
+    /**
+     * Creates a pre-authenticated ADT REST client using an existing session
+     * (cookies and optional CSRF token) obtained from ADT's connection.
+     * <p>
+     * When a CSRF token is provided, {@link #login()} will skip the discovery
+     * request entirely. When only cookies are provided, login() will still
+     * fetch a CSRF token but will use the existing session cookies for
+     * authentication instead of Basic Auth.
+     * </p>
+     *
+     * @param baseUrl           SAP system base URL
+     * @param username          SAP user name
+     * @param sapClient         SAP client number
+     * @param language          Logon language
+     * @param allowInsecureSsl  accept all SSL certificates (dev only)
+     * @param existingCookies   pre-authenticated cookie manager from ADT session
+     * @param existingCsrfToken existing CSRF token (may be {@code null})
+     */
+    public AdtRestClient(String baseUrl, String username, String sapClient,
+                         String language, boolean allowInsecureSsl,
+                         java.net.CookieManager existingCookies, String existingCsrfToken) {
+        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        this.username = username;
+        this.password = "";  // not needed for pre-authenticated session
+        this.sapClient = sapClient;
+        this.language = language;
+        this.loggedIn = false;
+        this.preAuthenticated = true;
+
+        // Use existing cookies if provided, otherwise create new manager
+        if (existingCookies != null) {
+            this.cookieManager = existingCookies;
+        } else {
+            this.cookieManager = new CookieManager();
+            this.cookieManager.setCookiePolicy(CookiePolicy.ACCEPT_ALL);
+        }
+
+        // Use existing CSRF token if provided
+        if (existingCsrfToken != null && !existingCsrfToken.isEmpty()) {
+            this.csrfToken = existingCsrfToken;
+            this.loggedIn = true;
+        }
+
+        HttpClient.Builder builder = HttpClient.newBuilder()
+                .cookieHandler(this.cookieManager)
+                .connectTimeout(Duration.ofSeconds(30))
+                .version(HttpClient.Version.HTTP_1_1);
+
+        if (allowInsecureSsl) {
+            try {
+                SSLContext sslContext = createTrustAllSslContext();
+                builder.sslContext(sslContext);
+            } catch (NoSuchAlgorithmException | KeyManagementException e) {
+                throw new RuntimeException("Failed to create trust-all SSL context", e);
+            }
+        }
+
+        this.httpClient = builder.build();
+    }
+
     // ---------------------------------------------------------------
     // Public API
     // ---------------------------------------------------------------
@@ -106,6 +169,25 @@ public class AdtRestClient {
      * @throws Exception if the login request fails or returns non-2xx
      */
     public void login() throws Exception {
+        // If already logged in from pre-authenticated session, skip login
+        if (loggedIn && preAuthenticated) {
+            System.out.println("AdtRestClient: using pre-authenticated ADT session for " + baseUrl);
+            return;
+        }
+
+        // If pre-authenticated but no CSRF token yet, just fetch the token
+        // using existing cookies (no Basic Auth needed)
+        if (preAuthenticated && csrfToken == null) {
+            System.out.println("AdtRestClient: fetching CSRF token using ADT session cookies for " + baseUrl);
+            refreshCsrfToken();
+            if (csrfToken != null && !csrfToken.isEmpty()) {
+                loggedIn = true;
+                return;
+            }
+            // If CSRF fetch failed, fall through to full login
+            System.out.println("AdtRestClient: CSRF fetch with cookies failed, falling back to full login");
+        }
+
         String url = buildUrl(DISCOVERY_PATH);
         System.out.println("AdtRestClient: logging in to " + baseUrl + " ...");
 

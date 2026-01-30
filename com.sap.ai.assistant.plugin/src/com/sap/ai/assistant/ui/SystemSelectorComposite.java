@@ -141,8 +141,13 @@ public class SystemSelectorComposite extends Composite {
 
         systems.addAll(discovered);
 
-        for (SapSystemConnection sys : systems) {
+        for (int i = 0; i < systems.size(); i++) {
+            SapSystemConnection sys = systems.get(i);
             String displayText = sys.getProjectName() + " (" + sys.getHost() + ")";
+            // Mark ADT-discovered systems so users know no password is needed
+            if (i < discoveredCount && sys.hasAdtProject()) {
+                displayText += " [ADT]";
+            }
             combo.add(displayText);
         }
 
