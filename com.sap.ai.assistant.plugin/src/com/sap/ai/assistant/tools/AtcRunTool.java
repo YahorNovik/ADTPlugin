@@ -101,7 +101,7 @@ public class AtcRunTool extends AbstractSapTool {
         // Step 2: Fetch the worklist
         HttpResponse<String> worklistResponse = client.get(
                 "/sap/bc/adt/atc/worklists/" + urlEncode(worklistId),
-                "application/xml");
+                "application/atc.worklist.v1+xml");
 
         JsonObject worklist = AdtXmlParser.parseAtcWorklist(worklistResponse.body());
         worklist.addProperty("worklistId", worklistId);

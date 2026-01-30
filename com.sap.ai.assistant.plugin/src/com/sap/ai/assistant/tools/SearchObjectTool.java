@@ -78,7 +78,7 @@ public class SearchObjectTool extends AbstractSapTool {
             path.append("&objectType=").append(urlEncode(objType));
         }
 
-        HttpResponse<String> response = client.get(path.toString(), "application/xml");
+        HttpResponse<String> response = client.get(path.toString(), "application/*");
         JsonArray results = AdtXmlParser.parseSearchResults(response.body());
 
         JsonObject output = new JsonObject();

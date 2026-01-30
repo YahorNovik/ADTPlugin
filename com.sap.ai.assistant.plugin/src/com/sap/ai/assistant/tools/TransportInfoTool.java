@@ -68,7 +68,7 @@ public class TransportInfoTool extends AbstractSapTool {
             path.append("&devclass=").append(urlEncode(devClass));
         }
 
-        HttpResponse<String> response = client.get(path.toString(), "application/xml");
+        HttpResponse<String> response = client.get(path.toString(), "application/*");
 
         // Return the raw XML as the transport info structure varies
         // across SAP releases; the LLM can interpret the XML directly

@@ -68,20 +68,22 @@ public class NodeContentsTool extends AbstractSapTool {
         String parentName = optString(arguments, "parent_name");
         String userName = optString(arguments, "user_name");
 
-        StringBuilder body = new StringBuilder();
-        body.append("parent_type=").append(urlEncode(parentType));
+        // ADT API: parameters go as query params on the URL, not as form body
+        StringBuilder path = new StringBuilder();
+        path.append("/sap/bc/adt/repository/nodestructure");
+        path.append("?parent_type=").append(urlEncode(parentType));
         if (parentName != null && !parentName.isEmpty()) {
-            body.append("&parent_name=").append(urlEncode(parentName));
+            path.append("&parent_name=").append(urlEncode(parentName));
         }
         if (userName != null && !userName.isEmpty()) {
-            body.append("&user_name=").append(urlEncode(userName));
+            path.append("&user_name=").append(urlEncode(userName));
         }
 
         HttpResponse<String> response = client.post(
-                "/sap/bc/adt/repository/nodestructure",
-                body.toString(),
-                "application/x-www-form-urlencoded",
-                "application/xml");
+                path.toString(),
+                "",
+                "application/*",
+                "application/*");
 
         JsonObject result = AdtXmlParser.parseNodeContents(response.body());
         return ToolResult.success(null, result.toString());

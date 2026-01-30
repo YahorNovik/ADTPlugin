@@ -81,8 +81,8 @@ public class UsageReferencesTool extends AbstractSapTool {
         HttpResponse<String> response = client.post(
                 path.toString(),
                 "",
-                "application/xml",
-                "application/xml");
+                "application/*",
+                "application/*");
 
         // Return the raw response; usage reference results vary by
         // SAP release and the LLM can interpret the XML

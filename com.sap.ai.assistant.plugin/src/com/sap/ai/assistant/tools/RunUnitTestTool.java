@@ -123,8 +123,8 @@ public class RunUnitTestTool extends AbstractSapTool {
         HttpResponse<String> response = client.post(
                 "/sap/bc/adt/abapunit/testruns",
                 xmlBody,
-                "application/xml",
-                "application/xml");
+                "application/*",
+                "application/*");
 
         if (response.statusCode() >= 400) {
             return ToolResult.error(null,

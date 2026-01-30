@@ -68,7 +68,7 @@ public class ActivateTool extends AbstractSapTool {
                 + "</adtcore:objectReferences>";
 
         HttpResponse<String> response = client.post(
-                "/sap/bc/adt/activation",
+                "/sap/bc/adt/activation?method=activate&preauditRequested=true",
                 xmlBody,
                 "application/xml",
                 "application/xml,application/vnd.sap.adt.inactivectsobjects.v1+xml;q=0.9");

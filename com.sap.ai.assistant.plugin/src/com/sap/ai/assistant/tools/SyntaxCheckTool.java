@@ -100,8 +100,8 @@ public class SyntaxCheckTool extends AbstractSapTool {
         HttpResponse<String> response = client.post(
                 "/sap/bc/adt/abapsource/syntaxcheck",
                 xmlBody.toString(),
-                "application/xml",
-                "application/xml");
+                "application/*",
+                "application/*");
 
         JsonArray results = AdtXmlParser.parseSyntaxCheckResults(response.body());
 

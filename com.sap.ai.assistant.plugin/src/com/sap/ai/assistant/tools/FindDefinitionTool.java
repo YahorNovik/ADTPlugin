@@ -86,22 +86,18 @@ public class FindDefinitionTool extends AbstractSapTool {
         int startColumn = arguments.get("startColumn").getAsInt();
         int endColumn = arguments.get("endColumn").getAsInt();
 
-        StringBuilder xmlBody = new StringBuilder();
-        xmlBody.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        xmlBody.append("<navigation:navigationRequest xmlns:navigation=\"http://www.sap.com/adt/navigation\">");
-        xmlBody.append("<navigation:sourceObject uri=\"").append(escapeXml(url)).append("\" ");
-        xmlBody.append("line=\"").append(line).append("\" ");
-        xmlBody.append("startColumn=\"").append(startColumn).append("\" ");
-        xmlBody.append("endColumn=\"").append(endColumn).append("\">");
-        xmlBody.append("<navigation:source><![CDATA[").append(source).append("]]></navigation:source>");
-        xmlBody.append("</navigation:sourceObject>");
-        xmlBody.append("</navigation:navigationRequest>");
+        // ADT navigation API: POST source as text/plain with position as query params
+        String navPath = "/sap/bc/adt/navigation/target"
+                + "?uri=" + urlEncode(url)
+                + "&line=" + line
+                + "&column=" + startColumn
+                + "&endColumn=" + endColumn;
 
         HttpResponse<String> response = client.post(
-                "/sap/bc/adt/navigation/targets",
-                xmlBody.toString(),
-                "application/xml",
-                "application/xml");
+                navPath,
+                source,
+                "text/plain",
+                "application/*");
 
         // Return the raw response; the navigation result contains the
         // target URI, line number, and column of the definition
@@ -109,17 +105,5 @@ public class FindDefinitionTool extends AbstractSapTool {
         output.addProperty("statusCode", response.statusCode());
         output.addProperty("response", response.body());
         return ToolResult.success(null, output.toString());
-    }
-
-    private String escapeXml(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&apos;");
     }
 }

@@ -155,7 +155,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
                     + "&maxResults=5"
                     + "&objectType=" + urlEncode(objtype);
 
-            HttpResponse<String> searchResp = client.get(searchPath, "application/xml");
+            HttpResponse<String> searchResp = client.get(searchPath, "application/*");
             JsonArray searchResults = AdtXmlParser.parseSearchResults(searchResp.body());
 
             // Look for an exact name match (case-insensitive)
@@ -293,8 +293,8 @@ public class WriteAndCheckTool extends AbstractSapTool {
             HttpResponse<String> syntaxResp = client.post(
                     "/sap/bc/adt/abapsource/syntaxcheck",
                     syntaxXml.toString(),
-                    "application/xml",
-                    "application/xml");
+                    "application/*",
+                    "application/*");
 
             syntaxMessages = AdtXmlParser.parseSyntaxCheckResults(syntaxResp.body());
 
