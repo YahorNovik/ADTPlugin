@@ -60,6 +60,7 @@ public class SapToolRegistry {
         register(map, new TransportInfoTool(client));
         register(map, new FindDefinitionTool(client));
         register(map, new UsageReferencesTool(client));
+        register(map, new RunUnitTestTool(client));
 
         for (SapTool tool : additionalTools) {
             register(map, tool);

@@ -613,6 +613,176 @@ public final class AdtXmlParser {
     }
 
     // ---------------------------------------------------------------
+    // Unit test results (AUnit)
+    // ---------------------------------------------------------------
+
+    /**
+     * Parse an ABAP Unit (AUnit) test run response XML.
+     *
+     * <p>Response root is {@code <aunit:runResult>} containing
+     * {@code <program>} → {@code <testClasses>} → {@code <testClass>}
+     * → {@code <testMethods>} → {@code <testMethod>}, each with
+     * optional {@code <alerts>}.</p>
+     *
+     * @param xml raw XML string
+     * @return JsonObject with totalTests, failures, errors, success,
+     *         and testClasses array
+     */
+    public static JsonObject parseUnitTestResults(String xml) {
+        JsonObject result = new JsonObject();
+        JsonArray testClasses = new JsonArray();
+        result.add("testClasses", testClasses);
+        result.addProperty("totalTests", 0);
+        result.addProperty("failures", 0);
+        result.addProperty("errors", 0);
+        result.addProperty("success", true);
+
+        if (isBlank(xml)) {
+            return result;
+        }
+
+        int totalTests = 0;
+        int failures = 0;
+        int errors = 0;
+
+        try {
+            Document doc = parseDocument(xml);
+
+            // Find <program> elements under the root runResult
+            NodeList programNodes = doc.getElementsByTagName("program");
+
+            for (int p = 0; p < programNodes.getLength(); p++) {
+                Element programEl = (Element) programNodes.item(p);
+
+                // Find <testClass> elements
+                NodeList classNodes = programEl.getElementsByTagName("testClass");
+
+                for (int c = 0; c < classNodes.getLength(); c++) {
+                    Element classEl = (Element) classNodes.item(c);
+                    JsonObject testClass = new JsonObject();
+                    testClass.addProperty("name", attr(classEl, "adtcore:name",
+                            attr(classEl, "name", "")));
+                    testClass.addProperty("uri", attr(classEl, "adtcore:uri",
+                            attr(classEl, "uri", "")));
+                    testClass.addProperty("type", attr(classEl, "adtcore:type",
+                            attr(classEl, "type", "")));
+                    testClass.addProperty("riskLevel", attr(classEl, "riskLevel", ""));
+                    testClass.addProperty("durationCategory", attr(classEl, "durationCategory", ""));
+
+                    // Class-level alerts
+                    JsonArray classAlerts = parseAlerts(classEl);
+                    testClass.add("alerts", classAlerts);
+                    if (classAlerts.size() > 0) {
+                        errors += countAlertsByKind(classAlerts, "exception");
+                        failures += countAlertsByKind(classAlerts, "failedAssertion");
+                    }
+
+                    // Test methods
+                    JsonArray methods = new JsonArray();
+                    NodeList methodNodes = classEl.getElementsByTagName("testMethod");
+
+                    for (int m = 0; m < methodNodes.getLength(); m++) {
+                        Element methodEl = (Element) methodNodes.item(m);
+                        JsonObject method = new JsonObject();
+                        method.addProperty("name", attr(methodEl, "adtcore:name",
+                                attr(methodEl, "name", "")));
+                        method.addProperty("uri", attr(methodEl, "adtcore:uri",
+                                attr(methodEl, "uri", "")));
+                        method.addProperty("executionTime",
+                                attr(methodEl, "executionTime", "0"));
+                        method.addProperty("unit", attr(methodEl, "unit", "s"));
+
+                        JsonArray methodAlerts = parseAlerts(methodEl);
+                        method.add("alerts", methodAlerts);
+
+                        errors += countAlertsByKind(methodAlerts, "exception");
+                        failures += countAlertsByKind(methodAlerts, "failedAssertion");
+
+                        methods.add(method);
+                        totalTests++;
+                    }
+
+                    testClass.add("testMethods", methods);
+                    testClasses.add(testClass);
+                }
+            }
+
+        } catch (Exception e) {
+            System.err.println("AdtXmlParser.parseUnitTestResults failed: " + e.getMessage());
+        }
+
+        result.addProperty("totalTests", totalTests);
+        result.addProperty("failures", failures);
+        result.addProperty("errors", errors);
+        result.addProperty("success", failures == 0 && errors == 0);
+        return result;
+    }
+
+    /**
+     * Parse {@code <alerts>} child elements of a test class or method element.
+     */
+    private static JsonArray parseAlerts(Element parent) {
+        JsonArray alerts = new JsonArray();
+        NodeList alertNodes = parent.getElementsByTagName("alert");
+
+        for (int i = 0; i < alertNodes.getLength(); i++) {
+            Element alertEl = (Element) alertNodes.item(i);
+            // Only parse direct alert children (not nested inside other testMethods)
+            if (!alertEl.getParentNode().getLocalName().equals("alerts")
+                    || !alertEl.getParentNode().getParentNode().equals(parent)) {
+                continue;
+            }
+
+            JsonObject alert = new JsonObject();
+            alert.addProperty("kind", attr(alertEl, "kind", ""));
+            alert.addProperty("severity", attr(alertEl, "severity", ""));
+            alert.addProperty("title", childText(alertEl, "title", ""));
+
+            // Details
+            JsonArray details = new JsonArray();
+            NodeList detailNodes = alertEl.getElementsByTagName("detail");
+            for (int d = 0; d < detailNodes.getLength(); d++) {
+                Element detailEl = (Element) detailNodes.item(d);
+                String text = attr(detailEl, "text", detailEl.getTextContent());
+                if (text != null && !text.trim().isEmpty()) {
+                    details.add(text.trim());
+                }
+            }
+            alert.add("details", details);
+
+            // Stack
+            JsonArray stack = new JsonArray();
+            NodeList stackNodes = alertEl.getElementsByTagName("stackEntry");
+            for (int s = 0; s < stackNodes.getLength(); s++) {
+                Element stackEl = (Element) stackNodes.item(s);
+                String desc = attr(stackEl, "adtcore:description",
+                        attr(stackEl, "description", ""));
+                if (!desc.isEmpty()) {
+                    stack.add(desc);
+                }
+            }
+            alert.add("stack", stack);
+
+            alerts.add(alert);
+        }
+        return alerts;
+    }
+
+    /**
+     * Count alerts matching a given kind (e.g. "exception", "failedAssertion").
+     */
+    private static int countAlertsByKind(JsonArray alerts, String kind) {
+        int count = 0;
+        for (int i = 0; i < alerts.size(); i++) {
+            JsonObject alert = alerts.get(i).getAsJsonObject();
+            if (kind.equals(alert.get("kind").getAsString())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    // ---------------------------------------------------------------
     // Internal XML helpers
     // ---------------------------------------------------------------
 
