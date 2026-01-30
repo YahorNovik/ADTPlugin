@@ -57,13 +57,19 @@ public abstract class AbstractLlmProvider implements LlmProvider {
             } else {
                 // 2. Try Eclipse proxy settings via IProxyService
                 if (!configureEclipseProxy(builder)) {
-                    // No proxy found — use direct connection (don't call builder.proxy())
+                    // No proxy found — force DIRECT connection.
+                    // We MUST explicitly set this because HttpClient's default
+                    // uses ProxySelector.getDefault(), which on macOS/Eclipse JVM
+                    // may pick up OS-level auto-proxy settings and route through
+                    // a non-existent proxy, causing ConnectException.
+                    builder.proxy(ProxySelector.of(null));
                     System.out.println("LLM HttpClient using direct connection (no proxy)");
                 }
             }
         } catch (Exception e) {
             System.err.println("LLM HttpClient proxy setup failed: " + e.getMessage());
-            // Fall back to direct connection (no proxy configured)
+            // Fall back to explicit direct connection
+            builder.proxy(ProxySelector.of(null));
         }
 
         return builder.build();
