@@ -33,6 +33,16 @@ public class SapToolRegistry {
      * @param client the authenticated ADT REST client shared by all tools
      */
     public SapToolRegistry(AdtRestClient client) {
+        this(client, Collections.emptyList());
+    }
+
+    /**
+     * Create the registry with ADT tools and additional tools (e.g. MCP tools).
+     *
+     * @param client          the authenticated ADT REST client shared by ADT tools
+     * @param additionalTools extra tools to register (may include MCP tools)
+     */
+    public SapToolRegistry(AdtRestClient client, List<SapTool> additionalTools) {
         Map<String, SapTool> map = new LinkedHashMap<>();
 
         register(map, new SearchObjectTool(client));
@@ -51,7 +61,33 @@ public class SapToolRegistry {
         register(map, new FindDefinitionTool(client));
         register(map, new UsageReferencesTool(client));
 
+        for (SapTool tool : additionalTools) {
+            register(map, tool);
+        }
+
         this.toolsByName = Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * Private constructor that accepts a pre-built map.
+     */
+    private SapToolRegistry(Map<String, SapTool> map) {
+        this.toolsByName = Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * Create a registry with only the given tools (no ADT tools).
+     * Used when no SAP system is connected but MCP tools are available.
+     *
+     * @param tools the tools to register
+     * @return a new registry containing only the provided tools
+     */
+    public static SapToolRegistry withToolsOnly(List<SapTool> tools) {
+        Map<String, SapTool> map = new LinkedHashMap<>();
+        for (SapTool tool : tools) {
+            register(map, tool);
+        }
+        return new SapToolRegistry(map);
     }
 
     private static void register(Map<String, SapTool> map, SapTool tool) {

@@ -16,8 +16,10 @@ import org.eclipse.ui.IPartService;
 import org.eclipse.ui.dialogs.PreferencesUtil;
 import org.eclipse.ui.part.ViewPart;
 
+import java.util.ArrayList;
 import java.util.List;
 
+import com.google.gson.JsonObject;
 import com.sap.ai.assistant.Activator;
 import com.sap.ai.assistant.agent.AgentCallback;
 import com.sap.ai.assistant.agent.AgentLoop;
@@ -26,6 +28,10 @@ import com.sap.ai.assistant.agent.ConversationManager;
 import com.sap.ai.assistant.context.EditorContextTracker;
 import com.sap.ai.assistant.llm.LlmProvider;
 import com.sap.ai.assistant.llm.LlmProviderFactory;
+import com.sap.ai.assistant.mcp.McpClient;
+import com.sap.ai.assistant.mcp.McpServerConfig;
+import com.sap.ai.assistant.mcp.McpToolAdapter;
+import com.sap.ai.assistant.mcp.McpToolDefinitionParser;
 import com.sap.ai.assistant.model.AdtContext;
 import com.sap.ai.assistant.model.ChatConversation;
 import com.sap.ai.assistant.model.ChatMessage;
@@ -33,9 +39,11 @@ import com.sap.ai.assistant.model.DiffRequest;
 import com.sap.ai.assistant.model.LlmProviderConfig;
 import com.sap.ai.assistant.model.SapSystemConnection;
 import com.sap.ai.assistant.model.ToolCall;
+import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
 import com.sap.ai.assistant.preferences.PreferenceConstants;
 import com.sap.ai.assistant.sap.AdtRestClient;
+import com.sap.ai.assistant.tools.SapTool;
 import com.sap.ai.assistant.tools.SapToolRegistry;
 
 /**
@@ -283,17 +291,47 @@ public class AiAssistantView extends ViewPart {
         final LlmProviderConfig finalConfig = config;
         final SapSystemConnection finalSystem = selectedSystem;
         final ChatConversation finalConversation = conversation;
+        final AdtContext finalEditorContext = editorContext;
+
+        // Read MCP server configs
+        String mcpServersJson = store.getString(PreferenceConstants.MCP_SERVERS);
+        final List<McpServerConfig> mcpConfigs = McpServerConfig.fromJson(mcpServersJson);
 
         // Run agent loop in background
         currentJob = new Job("SAP AI Assistant") {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
                 AdtRestClient restClient = null;
+                List<McpClient> mcpClients = new ArrayList<>();
                 try {
                     // Create LLM provider
                     LlmProvider llmProvider = LlmProviderFactory.create(finalConfig);
 
-                    // Create SAP REST client if system selected
+                    // Connect to MCP servers and discover tools
+                    List<SapTool> mcpTools = new ArrayList<>();
+                    for (McpServerConfig mcpConfig : mcpConfigs) {
+                        if (!mcpConfig.isEnabled()) continue;
+                        try {
+                            McpClient mcpClient = new McpClient(mcpConfig.getUrl());
+                            mcpClient.connect();
+                            mcpClients.add(mcpClient);
+
+                            List<JsonObject> rawTools = mcpClient.listTools();
+                            List<ToolDefinition> defs = McpToolDefinitionParser.parse(rawTools);
+
+                            for (int i = 0; i < rawTools.size(); i++) {
+                                String originalName = rawTools.get(i).get("name").getAsString();
+                                mcpTools.add(new McpToolAdapter(mcpClient, originalName, defs.get(i)));
+                            }
+                            System.out.println("MCP: Loaded " + rawTools.size()
+                                    + " tools from " + mcpConfig.getName());
+                        } catch (Exception e) {
+                            System.err.println("MCP: Failed to connect to "
+                                    + mcpConfig.getName() + ": " + e.getMessage());
+                        }
+                    }
+
+                    // Create SAP REST client and tool registry
                     SapToolRegistry toolRegistry = null;
                     if (finalSystem != null) {
                         restClient = new AdtRestClient(
@@ -304,7 +342,17 @@ public class AiAssistantView extends ViewPart {
                                 "EN",
                                 false);
                         restClient.login();
-                        toolRegistry = new SapToolRegistry(restClient);
+                        toolRegistry = new SapToolRegistry(restClient, mcpTools);
+                    } else if (!mcpTools.isEmpty()) {
+                        toolRegistry = SapToolRegistry.withToolsOnly(mcpTools);
+                    }
+
+                    // Rebuild system prompt with the registry so tool
+                    // descriptions include MCP tools
+                    if (toolRegistry != null) {
+                        String updatedPrompt = ContextBuilder.buildSystemPrompt(
+                                finalEditorContext, toolRegistry);
+                        finalConversation.setSystemPrompt(updatedPrompt);
                     }
 
                     // Create and run agent loop (pass restClient for diff preview)
@@ -388,6 +436,13 @@ public class AiAssistantView extends ViewPart {
                             restClient.logout();
                         } catch (Exception ignored) {
                             // Best-effort logout
+                        }
+                    }
+                    for (McpClient mc : mcpClients) {
+                        try {
+                            mc.disconnect();
+                        } catch (Exception ignored) {
+                            // Best-effort disconnect
                         }
                     }
                 }

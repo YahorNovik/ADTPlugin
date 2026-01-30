@@ -1,5 +1,8 @@
 package com.sap.ai.assistant.preferences;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.preference.PreferencePage;
 import org.eclipse.swt.SWT;
@@ -11,12 +14,17 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Spinner;
+import org.eclipse.swt.widgets.Table;
+import org.eclipse.swt.widgets.TableColumn;
+import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPreferencePage;
 
 import com.sap.ai.assistant.Activator;
+import com.sap.ai.assistant.mcp.McpClient;
+import com.sap.ai.assistant.mcp.McpServerConfig;
 import com.sap.ai.assistant.model.LlmProviderConfig;
 
 /**
@@ -34,6 +42,8 @@ public class AiAssistantPreferencePage extends PreferencePage
     private Combo modelCombo;
     private Spinner maxTokensSpinner;
     private Button includeContextCheck;
+    private Table mcpTable;
+    private List<McpServerConfig> mcpServers = new ArrayList<>();
 
     private final LlmProviderConfig.Provider[] providers = LlmProviderConfig.Provider.values();
 
@@ -95,6 +105,47 @@ public class AiAssistantPreferencePage extends PreferencePage
         includeContextCheck = new Button(behaviourGroup, SWT.CHECK);
         includeContextCheck.setText("Include editor context in prompts");
         includeContextCheck.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        // -- MCP Servers group --
+        Group mcpGroup = new Group(container, SWT.NONE);
+        mcpGroup.setText("MCP Documentation Servers");
+        mcpGroup.setLayout(new GridLayout(2, false));
+        mcpGroup.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+
+        mcpTable = new Table(mcpGroup, SWT.BORDER | SWT.CHECK | SWT.FULL_SELECTION | SWT.SINGLE);
+        mcpTable.setHeaderVisible(true);
+        mcpTable.setLinesVisible(true);
+        GridData tableGd = new GridData(SWT.FILL, SWT.FILL, true, true);
+        tableGd.heightHint = 100;
+        mcpTable.setLayoutData(tableGd);
+
+        TableColumn nameCol = new TableColumn(mcpTable, SWT.NONE);
+        nameCol.setText("Name");
+        nameCol.setWidth(120);
+
+        TableColumn urlCol = new TableColumn(mcpTable, SWT.NONE);
+        urlCol.setText("URL");
+        urlCol.setWidth(350);
+
+        // Buttons for MCP table
+        Composite mcpButtons = new Composite(mcpGroup, SWT.NONE);
+        mcpButtons.setLayout(new GridLayout(1, true));
+        mcpButtons.setLayoutData(new GridData(SWT.CENTER, SWT.TOP, false, false));
+
+        Button addBtn = new Button(mcpButtons, SWT.PUSH);
+        addBtn.setText("Add...");
+        addBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        addBtn.addListener(SWT.Selection, e -> handleMcpAdd());
+
+        Button removeBtn = new Button(mcpButtons, SWT.PUSH);
+        removeBtn.setText("Remove");
+        removeBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        removeBtn.addListener(SWT.Selection, e -> handleMcpRemove());
+
+        Button testBtn = new Button(mcpButtons, SWT.PUSH);
+        testBtn.setText("Test");
+        testBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        testBtn.addListener(SWT.Selection, e -> handleMcpTest());
 
         // Load current values
         loadValues();
@@ -178,6 +229,21 @@ public class AiAssistantPreferencePage extends PreferencePage
 
         // Include context
         includeContextCheck.setSelection(store.getBoolean(PreferenceConstants.INCLUDE_CONTEXT));
+
+        // MCP Servers
+        String mcpJson = store.getString(PreferenceConstants.MCP_SERVERS);
+        mcpServers = McpServerConfig.fromJson(mcpJson);
+        refreshMcpTable();
+    }
+
+    private void refreshMcpTable() {
+        mcpTable.removeAll();
+        for (McpServerConfig cfg : mcpServers) {
+            TableItem item = new TableItem(mcpTable, SWT.NONE);
+            item.setChecked(cfg.isEnabled());
+            item.setText(0, cfg.getName());
+            item.setText(1, cfg.getUrl());
+        }
     }
 
     @Override
@@ -194,19 +260,81 @@ public class AiAssistantPreferencePage extends PreferencePage
         store.setValue(PreferenceConstants.LLM_MAX_TOKENS, maxTokensSpinner.getSelection());
         store.setValue(PreferenceConstants.INCLUDE_CONTEXT, includeContextCheck.getSelection());
 
+        // Sync enabled state from table checkboxes
+        for (int i = 0; i < mcpServers.size() && i < mcpTable.getItemCount(); i++) {
+            mcpServers.get(i).setEnabled(mcpTable.getItem(i).getChecked());
+        }
+        store.setValue(PreferenceConstants.MCP_SERVERS, McpServerConfig.toJson(mcpServers));
+
         return super.performOk();
     }
 
     @Override
     protected void performDefaults() {
-        IPreferenceStore store = getPreferenceStore();
-
         providerCombo.select(0); // Anthropic
         onProviderChanged();
         apiKeyText.setText("");
         maxTokensSpinner.setSelection(8192);
         includeContextCheck.setSelection(true);
 
+        // Reset MCP servers to default
+        mcpServers = new ArrayList<>();
+        mcpServers.add(new McpServerConfig("SAP Docs",
+                "https://mcp-sap-docs.marianzeis.de/mcp", true));
+        refreshMcpTable();
+
         super.performDefaults();
+    }
+
+    // -- MCP Server management -----------------------------------------------
+
+    private void handleMcpAdd() {
+        org.eclipse.jface.dialogs.InputDialog nameDialog =
+                new org.eclipse.jface.dialogs.InputDialog(
+                        getShell(), "Add MCP Server", "Server name:", "", null);
+        if (nameDialog.open() != org.eclipse.jface.window.Window.OK) return;
+        String name = nameDialog.getValue().trim();
+        if (name.isEmpty()) return;
+
+        org.eclipse.jface.dialogs.InputDialog urlDialog =
+                new org.eclipse.jface.dialogs.InputDialog(
+                        getShell(), "Add MCP Server",
+                        "Server URL (e.g. https://example.com/mcp):", "", null);
+        if (urlDialog.open() != org.eclipse.jface.window.Window.OK) return;
+        String url = urlDialog.getValue().trim();
+        if (url.isEmpty()) return;
+
+        mcpServers.add(new McpServerConfig(name, url, true));
+        refreshMcpTable();
+    }
+
+    private void handleMcpRemove() {
+        int idx = mcpTable.getSelectionIndex();
+        if (idx < 0 || idx >= mcpServers.size()) return;
+
+        mcpServers.remove(idx);
+        refreshMcpTable();
+    }
+
+    private void handleMcpTest() {
+        int idx = mcpTable.getSelectionIndex();
+        if (idx < 0 || idx >= mcpServers.size()) return;
+
+        McpServerConfig cfg = mcpServers.get(idx);
+        try {
+            McpClient client = new McpClient(cfg.getUrl());
+            client.connect();
+            int toolCount = client.listTools().size();
+            client.disconnect();
+
+            org.eclipse.jface.dialogs.MessageDialog.openInformation(
+                    getShell(), "MCP Connection Test",
+                    "Connected successfully to \"" + cfg.getName() + "\".\n"
+                    + toolCount + " tools available.");
+        } catch (Exception e) {
+            org.eclipse.jface.dialogs.MessageDialog.openError(
+                    getShell(), "MCP Connection Test",
+                    "Failed to connect to \"" + cfg.getName() + "\":\n" + e.getMessage());
+        }
     }
 }

@@ -16,6 +16,7 @@ Bundle-ActivationPolicy: lazy
 Bundle-ClassPath: .,
  lib/gson-2.11.0.jar
 Export-Package: com.sap.ai.assistant,
+ com.sap.ai.assistant.mcp,
  com.sap.ai.assistant.model,
  com.sap.ai.assistant.llm,
  com.sap.ai.assistant.sap,

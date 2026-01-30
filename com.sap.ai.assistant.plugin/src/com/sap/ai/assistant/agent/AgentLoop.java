@@ -173,7 +173,8 @@ public class AgentLoop {
 
         if (toolRegistry == null) {
             return ToolResult.error(toolCall.getId(),
-                    "No SAP system connected. Cannot execute tool: '" + toolName + "'.");
+                    "No tools available. Connect to a SAP system or configure an MCP server "
+                    + "in Preferences. Cannot execute tool: '" + toolName + "'.");
         }
 
         SapTool tool = toolRegistry.get(toolName);

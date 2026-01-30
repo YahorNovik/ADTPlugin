@@ -22,5 +22,7 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
         store.setDefault(PreferenceConstants.LLM_MODEL, "");
         store.setDefault(PreferenceConstants.LLM_MAX_TOKENS, 8192);
         store.setDefault(PreferenceConstants.INCLUDE_CONTEXT, true);
+        store.setDefault(PreferenceConstants.MCP_SERVERS,
+                "[{\"name\":\"SAP Docs\",\"url\":\"https://mcp-sap-docs.marianzeis.de/mcp\",\"enabled\":true}]");
     }
 }

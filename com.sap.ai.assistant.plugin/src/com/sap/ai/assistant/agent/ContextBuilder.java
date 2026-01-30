@@ -61,6 +61,13 @@ public class ContextBuilder {
         sb.append("6. **Unlock** the object when finished (sap_unlock_object).\n\n");
         sb.append("Always ensure the object is unlocked after changes, even if an error occurs.\n\n");
 
+        // -- SAP Documentation tools --
+        sb.append("## SAP Documentation\n\n");
+        sb.append("You have access to MCP documentation tools (prefixed with mcp_) that can search ");
+        sb.append("official SAP documentation, ABAP keyword reference, SAP Help Portal, and SAP Community. ");
+        sb.append("Use these tools when you need reference information about ABAP syntax, CDS annotations, ");
+        sb.append("RAP patterns, S/4HANA changes, or any SAP development topic.\n\n");
+
         // -- ADT context --
         if (context != null) {
             appendAdtContext(sb, context);

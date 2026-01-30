@@ -24,6 +24,9 @@ public final class PreferenceConstants {
     /** Whether to include the current editor context in prompts. */
     public static final String INCLUDE_CONTEXT = "com.sap.ai.assistant.includeContext";
 
+    /** JSON array of MCP server configurations. */
+    public static final String MCP_SERVERS = "com.sap.ai.assistant.mcp.servers";
+
     private PreferenceConstants() {
         // Utility class -- no instances
     }
