@@ -20,6 +20,7 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
         store.setDefault(PreferenceConstants.LLM_PROVIDER, "ANTHROPIC");
         store.setDefault(PreferenceConstants.LLM_API_KEY, "");
         store.setDefault(PreferenceConstants.LLM_MODEL, "");
+        store.setDefault(PreferenceConstants.LLM_BASE_URL, "");
         store.setDefault(PreferenceConstants.LLM_MAX_TOKENS, 8192);
         store.setDefault(PreferenceConstants.INCLUDE_CONTEXT, true);
         store.setDefault(PreferenceConstants.MCP_SERVERS,

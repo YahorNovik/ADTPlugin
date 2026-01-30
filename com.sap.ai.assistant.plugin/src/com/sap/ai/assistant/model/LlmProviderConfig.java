@@ -17,14 +17,17 @@ public class LlmProviderConfig {
                     "claude-haiku-3-5-20241022",
                     "claude-3-5-sonnet-20241022"
                 }),
-        OPENAI("OpenAI", "gpt-4o", "https://api.openai.com",
+        OPENAI("OpenAI", "gpt-4.1", "https://api.openai.com",
                 new String[]{
+                    "gpt-5.1",
+                    "gpt-4.1",
+                    "gpt-4.1-mini",
+                    "gpt-4.1-nano",
                     "gpt-4o",
                     "gpt-4o-mini",
-                    "gpt-4-turbo",
-                    "o1",
-                    "o1-mini",
-                    "o3-mini"
+                    "o3",
+                    "o3-mini",
+                    "o4-mini"
                 }),
         GOOGLE("Google", "gemini-2.5-flash", "https://generativelanguage.googleapis.com",
                 new String[]{
@@ -39,7 +42,9 @@ public class LlmProviderConfig {
                     "mistral-medium-latest",
                     "mistral-small-latest",
                     "open-mistral-nemo"
-                });
+                }),
+        CUSTOM("Custom (OpenAI-compatible)", "", "",
+                new String[]{});
 
         private final String displayName;
         private final String defaultModel;

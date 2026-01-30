@@ -43,6 +43,8 @@ public class AiAssistantPreferencePage extends PreferencePage
 
     private Combo providerCombo;
     private Text apiKeyText;
+    private Text baseUrlText;
+    private Label baseUrlLabel;
     private Combo modelCombo;
     private Spinner maxTokensSpinner;
     private Button includeContextCheck;
@@ -87,6 +89,13 @@ public class AiAssistantPreferencePage extends PreferencePage
         new Label(llmGroup, SWT.NONE).setText("API Key:");
         apiKeyText = new Text(llmGroup, SWT.BORDER | SWT.PASSWORD);
         apiKeyText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        // Base URL (visible for all providers, editable only for Custom)
+        baseUrlLabel = new Label(llmGroup, SWT.NONE);
+        baseUrlLabel.setText("Base URL:");
+        baseUrlText = new Text(llmGroup, SWT.BORDER);
+        baseUrlText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        baseUrlText.setMessage("https://api.example.com");
 
         // Model
         new Label(llmGroup, SWT.NONE).setText("Model:");
@@ -212,6 +221,18 @@ public class AiAssistantPreferencePage extends PreferencePage
 
         LlmProviderConfig.Provider provider = providers[idx];
         String currentModel = modelCombo.getText();
+        boolean isCustom = provider == LlmProviderConfig.Provider.CUSTOM;
+
+        // Base URL: editable for Custom, show default for built-in
+        if (isCustom) {
+            baseUrlText.setEnabled(true);
+            if (baseUrlText.getText().isEmpty()) {
+                baseUrlText.setText("");
+            }
+        } else {
+            baseUrlText.setEnabled(false);
+            baseUrlText.setText(provider.getDefaultBaseUrl());
+        }
 
         // Update model dropdown with this provider's models
         modelCombo.removeAll();
@@ -219,20 +240,25 @@ public class AiAssistantPreferencePage extends PreferencePage
             modelCombo.add(model);
         }
 
-        // Try to keep the current model if it exists in the new provider
-        int found = -1;
-        for (int i = 0; i < provider.getAvailableModels().length; i++) {
-            if (provider.getAvailableModels()[i].equals(currentModel)) {
-                found = i;
-                break;
-            }
-        }
-
-        if (found >= 0) {
-            modelCombo.select(found);
+        if (isCustom) {
+            // Custom provider: user types model name freely
+            modelCombo.setText(currentModel);
         } else {
-            // Select the default model for this provider
-            modelCombo.select(0);
+            // Try to keep the current model if it exists in the new provider
+            int found = -1;
+            for (int i = 0; i < provider.getAvailableModels().length; i++) {
+                if (provider.getAvailableModels()[i].equals(currentModel)) {
+                    found = i;
+                    break;
+                }
+            }
+
+            if (found >= 0) {
+                modelCombo.select(found);
+            } else {
+                // Select the default model for this provider
+                modelCombo.select(0);
+            }
         }
     }
 
@@ -257,6 +283,17 @@ public class AiAssistantPreferencePage extends PreferencePage
             modelCombo.add(model);
         }
 
+        // Base URL
+        String baseUrl = store.getString(PreferenceConstants.LLM_BASE_URL);
+        boolean isCustom = selectedProvider == LlmProviderConfig.Provider.CUSTOM;
+        if (isCustom) {
+            baseUrlText.setEnabled(true);
+            baseUrlText.setText(baseUrl != null ? baseUrl : "");
+        } else {
+            baseUrlText.setEnabled(false);
+            baseUrlText.setText(selectedProvider.getDefaultBaseUrl());
+        }
+
         // Model
         String model = store.getString(PreferenceConstants.LLM_MODEL);
         if (model != null && !model.isEmpty()) {
@@ -268,7 +305,7 @@ public class AiAssistantPreferencePage extends PreferencePage
                 // Custom model - set as text
                 modelCombo.setText(model);
             }
-        } else {
+        } else if (modelCombo.getItemCount() > 0) {
             modelCombo.select(0);
         }
 
@@ -327,6 +364,7 @@ public class AiAssistantPreferencePage extends PreferencePage
 
         store.setValue(PreferenceConstants.LLM_API_KEY, apiKeyText.getText());
         store.setValue(PreferenceConstants.LLM_MODEL, modelCombo.getText());
+        store.setValue(PreferenceConstants.LLM_BASE_URL, baseUrlText.getText());
         store.setValue(PreferenceConstants.LLM_MAX_TOKENS, maxTokensSpinner.getSelection());
         store.setValue(PreferenceConstants.INCLUDE_CONTEXT, includeContextCheck.getSelection());
 
@@ -347,6 +385,7 @@ public class AiAssistantPreferencePage extends PreferencePage
         providerCombo.select(0); // Anthropic
         onProviderChanged();
         apiKeyText.setText("");
+        baseUrlText.setText("");
         maxTokensSpinner.setSelection(8192);
         includeContextCheck.setSelection(true);
 

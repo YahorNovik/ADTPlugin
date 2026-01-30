@@ -36,6 +36,8 @@ public final class LlmProviderFactory {
                 return new GeminiProvider(config);
             case MISTRAL:
                 return new MistralProvider(config);
+            case CUSTOM:
+                return new OpenAiProvider(config);
             default:
                 throw new IllegalArgumentException("Unsupported LLM provider: " + config.getProvider());
         }

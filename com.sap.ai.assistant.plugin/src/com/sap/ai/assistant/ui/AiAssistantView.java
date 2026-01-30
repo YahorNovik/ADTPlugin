@@ -235,8 +235,9 @@ public class AiAssistantView extends ViewPart {
         } catch (Exception e) {
             provider = LlmProviderConfig.Provider.ANTHROPIC;
         }
+        String baseUrl = store.getString(PreferenceConstants.LLM_BASE_URL);
         LlmProviderConfig config = new LlmProviderConfig(
-                provider, apiKey, model, null, maxTokens > 0 ? maxTokens : 8192);
+                provider, apiKey, model, baseUrl, maxTokens > 0 ? maxTokens : 8192);
 
         // Editor context
         AdtContext editorContext = null;

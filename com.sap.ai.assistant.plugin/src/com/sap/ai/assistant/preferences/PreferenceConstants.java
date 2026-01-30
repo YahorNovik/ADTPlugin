@@ -18,6 +18,9 @@ public final class PreferenceConstants {
     /** The model identifier (e.g. "claude-sonnet-4-20250514", "gpt-4o"). */
     public static final String LLM_MODEL = "com.sap.ai.assistant.llm.model";
 
+    /** Custom base URL for the LLM API (used with Custom provider). */
+    public static final String LLM_BASE_URL = "com.sap.ai.assistant.llm.baseUrl";
+
     /** Maximum number of response tokens (256 - 128 000). */
     public static final String LLM_MAX_TOKENS = "com.sap.ai.assistant.llm.maxTokens";
 
