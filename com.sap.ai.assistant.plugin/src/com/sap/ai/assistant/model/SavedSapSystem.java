@@ -132,11 +132,29 @@ public class SavedSapSystem {
         try {
             List<SavedSapSystem> list = GSON.fromJson(json,
                     new TypeToken<List<SavedSapSystem>>() {}.getType());
-            return list != null ? list : new ArrayList<>();
+            if (list == null) return new ArrayList<>();
+            // Migrate old entries: sanitize hostnames and auto-correct SSL based on port
+            for (SavedSapSystem sys : list) {
+                sys.host = sanitizeHost(sys.host);
+                sys.useSsl = inferSsl(sys.port);
+            }
+            return list;
         } catch (Exception e) {
             System.err.println("SavedSapSystem: failed to parse JSON: " + e.getMessage());
             return new ArrayList<>();
         }
+    }
+
+    /**
+     * Infer SSL setting from port number.
+     * Standard SAP HTTP ports (8000-8099, 50000-50099) → no SSL.
+     * Standard SAP HTTPS ports (443, 44300-44399, 8443) → SSL.
+     * Everything else → no SSL (safer default for most SAP systems).
+     */
+    private static boolean inferSsl(int port) {
+        if (port == 443 || port == 8443) return true;
+        if (port >= 44300 && port <= 44399) return true;
+        return false;
     }
 
     public static String toJson(List<SavedSapSystem> systems) {
