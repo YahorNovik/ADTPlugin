@@ -3,7 +3,8 @@ package com.sap.ai.assistant.ui;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.jface.dialogs.InputDialog;
+import org.eclipse.jface.dialogs.Dialog;
+import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.window.Window;
@@ -13,8 +14,10 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
+import org.eclipse.swt.widgets.Text;
 
 import com.sap.ai.assistant.Activator;
 import com.sap.ai.assistant.model.SavedSapSystem;
@@ -155,86 +158,25 @@ public class SystemSelectorComposite extends Composite {
     }
 
     /**
-     * Show dialogs to collect host, port, client, user, and password for
+     * Show a single dialog to collect URL, client, user, and password for
      * a manual SAP system connection.
      */
     private void handleAddManual() {
-        Shell shell = getShell();
-
-        // Host
-        InputDialog hostDialog = new InputDialog(
-                shell, "Add SAP System",
-                "Enter the SAP system hostname (e.g. myhost.sap.corp):",
-                "", null);
-        if (hostDialog.open() != Window.OK) {
-            resetComboSelection();
-            return;
-        }
-        String host = hostDialog.getValue().trim();
-        if (host.isEmpty()) {
+        AddSystemDialog dlg = new AddSystemDialog(getShell());
+        if (dlg.open() != Window.OK) {
             resetComboSelection();
             return;
         }
 
-        // Port
-        InputDialog portDialog = new InputDialog(
-                shell, "Add SAP System",
-                "Enter the HTTP(S) port (e.g. 44300):",
-                "443", input -> {
-                    try {
-                        int p = Integer.parseInt(input);
-                        return (p > 0 && p <= 65535) ? null : "Port must be 1-65535";
-                    } catch (NumberFormatException ex) {
-                        return "Invalid number";
-                    }
-                });
-        if (portDialog.open() != Window.OK) {
-            resetComboSelection();
-            return;
-        }
-        int port = Integer.parseInt(portDialog.getValue().trim());
+        String host = dlg.host;
+        int port = dlg.port;
+        boolean useSsl = dlg.useSsl;
+        String client = dlg.client;
+        String user = dlg.user;
+        String password = dlg.password;
 
-        // Client
-        InputDialog clientDialog = new InputDialog(
-                shell, "Add SAP System",
-                "Enter the SAP client number (e.g. 100):",
-                "100", null);
-        if (clientDialog.open() != Window.OK) {
-            resetComboSelection();
-            return;
-        }
-        String client = clientDialog.getValue().trim();
-
-        // User
-        InputDialog userDialog = new InputDialog(
-                shell, "Add SAP System",
-                "Enter the SAP user name:",
-                "", null);
-        if (userDialog.open() != Window.OK) {
-            resetComboSelection();
-            return;
-        }
-        String user = userDialog.getValue().trim();
-
-        // Password
-        InputDialog passDialog = new InputDialog(
-                shell, "Add SAP System",
-                "Enter the SAP password:",
-                "", null) {
-            @Override
-            protected int getInputTextStyle() {
-                return SWT.SINGLE | SWT.BORDER | SWT.PASSWORD;
-            }
-        };
-        if (passDialog.open() != Window.OK) {
-            resetComboSelection();
-            return;
-        }
-        String password = passDialog.getValue();
-
-        // Register, persist, and refresh
         String name = host + ":" + port + " [" + client + "]";
-        connectionManager.addManualSystem(name, host, port, client, user, password);
+        connectionManager.addManualSystem(name, host, port, client, user, password, useSsl);
         persistSavedSystems();
         refreshSystems();
 
@@ -243,6 +185,126 @@ public class SystemSelectorComposite extends Composite {
             combo.select(systems.size() - 1);
         }
         updateRemoveButton();
+    }
+
+    /**
+     * Single dialog for adding a SAP system with URL, client, user, password.
+     */
+    private static class AddSystemDialog extends Dialog {
+
+        private Text urlText;
+        private Text clientText;
+        private Text userText;
+        private Text passwordText;
+
+        String host;
+        int port = 8000;
+        boolean useSsl;
+        String client;
+        String user;
+        String password;
+
+        protected AddSystemDialog(Shell parentShell) {
+            super(parentShell);
+        }
+
+        @Override
+        protected void configureShell(Shell newShell) {
+            super.configureShell(newShell);
+            newShell.setText("Add SAP System");
+        }
+
+        @Override
+        protected Control createDialogArea(Composite parent) {
+            Composite area = (Composite) super.createDialogArea(parent);
+            Composite container = new Composite(area, SWT.NONE);
+            container.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+            GridLayout gl = new GridLayout(2, false);
+            gl.marginWidth = 10;
+            gl.marginHeight = 10;
+            container.setLayout(gl);
+
+            new Label(container, SWT.NONE).setText("System URL:");
+            urlText = new Text(container, SWT.BORDER);
+            urlText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+            urlText.setMessage("http://hostname:8000");
+
+            new Label(container, SWT.NONE); // spacer
+            Label hint = new Label(container, SWT.NONE);
+            hint.setText("e.g. http://myhost.corp:8000");
+            hint.setForeground(parent.getDisplay().getSystemColor(SWT.COLOR_WIDGET_NORMAL_SHADOW));
+
+            new Label(container, SWT.NONE).setText("Client:");
+            clientText = new Text(container, SWT.BORDER);
+            clientText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+            clientText.setText("100");
+
+            new Label(container, SWT.NONE).setText("User:");
+            userText = new Text(container, SWT.BORDER);
+            userText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+            new Label(container, SWT.NONE).setText("Password:");
+            passwordText = new Text(container, SWT.BORDER | SWT.PASSWORD);
+            passwordText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+            return area;
+        }
+
+        @Override
+        protected void createButtonsForButtonBar(Composite parent) {
+            createButton(parent, IDialogConstants.OK_ID, "Add", true);
+            createButton(parent, IDialogConstants.CANCEL_ID, IDialogConstants.CANCEL_LABEL, false);
+        }
+
+        @Override
+        protected void okPressed() {
+            String urlInput = urlText.getText().trim();
+            if (urlInput.isEmpty()) {
+                MessageDialog.openError(getShell(), "Add SAP System", "URL is required");
+                return;
+            }
+
+            // Parse URL
+            String h = urlInput;
+            useSsl = false;
+            port = 8000;
+
+            if (h.startsWith("https://")) {
+                useSsl = true;
+                h = h.substring(8);
+            } else if (h.startsWith("http://")) {
+                useSsl = false;
+                h = h.substring(7);
+            }
+
+            int slashIdx = h.indexOf('/');
+            if (slashIdx >= 0) h = h.substring(0, slashIdx);
+
+            int colonIdx = h.lastIndexOf(':');
+            if (colonIdx >= 0) {
+                try {
+                    port = Integer.parseInt(h.substring(colonIdx + 1));
+                    h = h.substring(0, colonIdx);
+                } catch (NumberFormatException ignored) {}
+            }
+
+            if (!urlInput.startsWith("http://") && !urlInput.startsWith("https://")) {
+                useSsl = AdtConnectionManager.inferSsl(port);
+            }
+
+            if (h.isEmpty()) {
+                MessageDialog.openError(getShell(), "Add SAP System", "Invalid URL");
+                return;
+            }
+
+            host = h;
+            client = clientText.getText().trim();
+            if (client.isEmpty()) client = "100";
+            user = userText.getText().trim();
+            password = passwordText.getText();
+
+            super.okPressed();
+        }
     }
 
     /**

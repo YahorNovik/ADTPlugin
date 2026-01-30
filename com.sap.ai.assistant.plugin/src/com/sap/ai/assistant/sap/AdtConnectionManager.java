@@ -59,8 +59,18 @@ public class AdtConnectionManager {
      * Register a SAP system manually.
      */
     public void addManualSystem(String name, String host, int port,
-                                String client, String user, String password) {
-        manualSystems.add(new SapSystemConnection(name, host, port, client, user, password, true));
+                                String client, String user, String password, boolean useSsl) {
+        manualSystems.add(new SapSystemConnection(name, host, port, client, user, password, useSsl));
+    }
+
+    /**
+     * Infer SSL from port number.
+     * Ports 443, 8443, 44300-44399 → SSL; everything else → no SSL.
+     */
+    public static boolean inferSsl(int port) {
+        if (port == 443 || port == 8443) return true;
+        if (port >= 44300 && port <= 44399) return true;
+        return false;
     }
 
     public List<SapSystemConnection> getManualSystems() {
@@ -311,7 +321,7 @@ public class AdtConnectionManager {
                     client != null ? client : "000",
                     user != null ? user : "",
                     "" /* password not available through adapter */,
-                    true);
+                    inferSsl(port));
         } catch (Exception e) {
             System.err.println("AdtConnectionManager: reflection failed: " + e.getMessage());
             return null;
@@ -353,7 +363,7 @@ public class AdtConnectionManager {
                             projectName, host, port,
                             client != null ? client : "000",
                             user != null ? user : "",
-                            "", true);
+                            "", inferSsl(port));
                 }
             }
         } catch (Exception e) {
