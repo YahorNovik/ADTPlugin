@@ -31,7 +31,7 @@ public class LockTool extends AbstractSapTool {
         JsonObject urlProp = new JsonObject();
         urlProp.addProperty("type", "string");
         urlProp.addProperty("description",
-                "The ADT object URL to lock (e.g. '/sap/bc/adt/programs/programs/ztest')");
+                "The ADT source URL to lock -- use the source URL (e.g. '/sap/bc/adt/programs/programs/ztest/source/main') when you intend to write source code, not the object URL");
 
         JsonObject modeProp = new JsonObject();
         modeProp.addProperty("type", "string");

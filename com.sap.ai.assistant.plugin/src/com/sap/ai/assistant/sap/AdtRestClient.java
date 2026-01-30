@@ -399,13 +399,72 @@ public class AdtRestClient {
     /**
      * Build the full URL by appending sap-client and sap-language query parameters.
      * If the path already contains a query string, the parameters are appended with &amp;.
+     * <p>
+     * Automatically normalises Eclipse ADT workspace URIs
+     * (e.g. {@code /ProjectName/.adt/programs/programs/ztest/ztest.asprog})
+     * to standard REST API paths ({@code /sap/bc/adt/programs/programs/ztest}).
+     * </p>
      */
     private String buildUrl(String path) {
         String fullPath = path.startsWith("/") ? path : "/" + path;
+        fullPath = normalizeAdtPath(fullPath);
         String separator = fullPath.contains("?") ? "&" : "?";
         return baseUrl + fullPath + separator
                 + "sap-client=" + sapClient
                 + "&sap-language=" + language;
+    }
+
+    /**
+     * Normalise an ADT path that may be in Eclipse workspace URI format.
+     * <ul>
+     *   <li>Converts {@code /<project>/.adt/...} to {@code /sap/bc/adt/...}</li>
+     *   <li>Removes Eclipse-specific file extensions ({@code .asprog}, {@code .clas}, etc.)</li>
+     *   <li>Removes duplicate trailing path segment ({@code .../name/name} → {@code .../name})</li>
+     * </ul>
+     * Standard paths starting with {@code /sap/} pass through unchanged.
+     */
+    static String normalizeAdtPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return path;
+        }
+        // Already a standard ADT REST path
+        if (path.startsWith("/sap/")) {
+            return path;
+        }
+
+        // Convert Eclipse workspace URI: /<project>/.adt/... → /sap/bc/adt/...
+        int adtIdx = path.indexOf("/.adt/");
+        if (adtIdx < 0) {
+            return path; // not an Eclipse workspace URI
+        }
+
+        String rest = path.substring(adtIdx + "/.adt/".length());
+
+        // Separate query string from path
+        String query = "";
+        int queryIdx = rest.indexOf('?');
+        if (queryIdx >= 0) {
+            query = rest.substring(queryIdx);
+            rest = rest.substring(0, queryIdx);
+        }
+
+        // Remove Eclipse file extensions (.asprog, .clas, .intf, .fugr, .func, .ddls, etc.)
+        rest = rest.replaceFirst("\\.[a-zA-Z]+$", "");
+
+        // Remove duplicate trailing path segment (Eclipse pattern: .../ztest/ztest)
+        int lastSlash = rest.lastIndexOf('/');
+        if (lastSlash > 0) {
+            String lastName = rest.substring(lastSlash + 1);
+            int prevSlash = rest.lastIndexOf('/', lastSlash - 1);
+            if (prevSlash >= 0) {
+                String prevName = rest.substring(prevSlash + 1, lastSlash);
+                if (prevName.equalsIgnoreCase(lastName)) {
+                    rest = rest.substring(0, lastSlash);
+                }
+            }
+        }
+
+        return "/sap/bc/adt/" + rest + query;
     }
 
     /**

@@ -249,9 +249,12 @@ public class WriteAndCheckTool extends AbstractSapTool {
 
         // ----------------------------------------------------------
         // Step 4: Lock (or reuse existing handle)
+        // Lock the SOURCE URL (not the object URL) because the PUT
+        // goes to the source URL and SAP validates the lock against
+        // the resource being written.
         // ----------------------------------------------------------
         if (lockHandle == null || lockHandle.isEmpty()) {
-            String lockPath = objectUrl + "?_action=LOCK&accessMode=MODIFY";
+            String lockPath = sourceUrl + "?_action=LOCK&accessMode=MODIFY";
             HttpResponse<String> lockResp = client.post(lockPath, "",
                     "application/*",
                     "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
@@ -259,7 +262,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
 
             if (lockHandle == null || lockHandle.isEmpty()) {
                 return ToolResult.error(null,
-                        "Failed to acquire lock on " + objectUrl + ". Response: " + lockResp.body());
+                        "Failed to acquire lock on " + sourceUrl + ". Response: " + lockResp.body());
             }
         }
         output.addProperty("lockHandle", lockHandle);
