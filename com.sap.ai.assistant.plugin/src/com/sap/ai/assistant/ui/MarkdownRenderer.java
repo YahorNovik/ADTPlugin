@@ -90,7 +90,9 @@ public final class MarkdownRenderer {
     private static void applyCodeBlocks(String text, List<StyleRange> ranges,
                                          Display display, StyledText widget) {
         Font codeFont = getMonospaceFont(display, widget);
-        Color bgColor = new Color(display, 240, 240, 240);
+        Color bgColor = isDark(display)
+                ? new Color(display, 35, 35, 40)
+                : new Color(display, 240, 240, 240);
 
         Matcher m = CODE_BLOCK.matcher(text);
         while (m.find()) {
@@ -151,6 +153,15 @@ public final class MarkdownRenderer {
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
+
+    private static boolean isDark(Display display) {
+        Color bg = display.getSystemColor(SWT.COLOR_LIST_BACKGROUND);
+        if (bg != null) {
+            org.eclipse.swt.graphics.RGB rgb = bg.getRGB();
+            return (rgb.red * 0.299 + rgb.green * 0.587 + rgb.blue * 0.114) < 128;
+        }
+        return false;
+    }
 
     /**
      * Returns true if the given offset falls inside a fenced code block.

@@ -264,6 +264,11 @@ public class ChatComposite extends Composite {
         ml.verticalSpacing = 6;
         messagesContainer.setLayout(ml);
 
+        // Set explicit background so chat area looks consistent on any theme
+        Color sysBg = getDisplay().getSystemColor(SWT.COLOR_LIST_BACKGROUND);
+        scrolledComposite.setBackground(sysBg);
+        messagesContainer.setBackground(sysBg);
+
         scrolledComposite.setContent(messagesContainer);
         scrolledComposite.setMinSize(messagesContainer.computeSize(SWT.DEFAULT, SWT.DEFAULT));
 
@@ -277,7 +282,7 @@ public class ChatComposite extends Composite {
     private void createContextBar() {
         contextLabel = new Label(this, SWT.NONE);
         contextLabel.setText("");
-        contextLabel.setForeground(new Color(getDisplay(), 100, 100, 100));
+        contextLabel.setForeground(getDisplay().getSystemColor(SWT.COLOR_WIDGET_NORMAL_SHADOW));
         GridData cgd = new GridData(SWT.FILL, SWT.CENTER, true, false);
         cgd.horizontalIndent = 8;
         contextLabel.setLayoutData(cgd);
