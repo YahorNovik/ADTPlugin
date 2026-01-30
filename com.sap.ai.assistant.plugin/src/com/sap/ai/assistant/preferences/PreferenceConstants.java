@@ -27,6 +27,9 @@ public final class PreferenceConstants {
     /** JSON array of MCP server configurations. */
     public static final String MCP_SERVERS = "com.sap.ai.assistant.mcp.servers";
 
+    /** JSON array of saved SAP system connections (without passwords). */
+    public static final String SAP_SAVED_SYSTEMS = "com.sap.ai.assistant.sap.savedSystems";
+
     private PreferenceConstants() {
         // Utility class -- no instances
     }

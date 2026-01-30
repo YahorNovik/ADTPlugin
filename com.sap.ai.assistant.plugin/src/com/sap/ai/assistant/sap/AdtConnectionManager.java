@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.sap.ai.assistant.model.SavedSapSystem;
 import com.sap.ai.assistant.model.SapSystemConnection;
 
 /**
@@ -68,6 +69,37 @@ public class AdtConnectionManager {
 
     public void clearManualSystems() {
         manualSystems.clear();
+    }
+
+    /**
+     * Loads previously saved systems from a JSON string and adds them to
+     * the manual systems list, skipping duplicates (same host+port+client).
+     */
+    public void loadSavedSystems(String json) {
+        List<SavedSapSystem> saved = SavedSapSystem.fromJson(json);
+        for (SavedSapSystem s : saved) {
+            boolean duplicate = false;
+            for (SapSystemConnection m : manualSystems) {
+                if (m.getHost().equals(s.getHost())
+                        && m.getPort() == s.getPort()
+                        && m.getClient().equals(s.getClient())) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) {
+                manualSystems.add(s.toConnection());
+            }
+        }
+    }
+
+    /**
+     * Removes a manual system by its index in the manual systems list.
+     */
+    public void removeManualSystem(int index) {
+        if (index >= 0 && index < manualSystems.size()) {
+            manualSystems.remove(index);
+        }
     }
 
     // ---------------------------------------------------------------

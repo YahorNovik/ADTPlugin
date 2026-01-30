@@ -24,5 +24,6 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
         store.setDefault(PreferenceConstants.INCLUDE_CONTEXT, true);
         store.setDefault(PreferenceConstants.MCP_SERVERS,
                 "[{\"name\":\"SAP Docs\",\"url\":\"https://mcp-sap-docs.marianzeis.de/mcp\",\"enabled\":true}]");
+        store.setDefault(PreferenceConstants.SAP_SAVED_SYSTEMS, "[]");
     }
 }

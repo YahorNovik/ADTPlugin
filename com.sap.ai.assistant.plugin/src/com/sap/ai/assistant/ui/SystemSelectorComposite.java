@@ -4,24 +4,33 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.jface.dialogs.InputDialog;
+import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.window.Window;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 
+import com.sap.ai.assistant.Activator;
+import com.sap.ai.assistant.model.SavedSapSystem;
 import com.sap.ai.assistant.model.SapSystemConnection;
+import com.sap.ai.assistant.preferences.PreferenceConstants;
 import com.sap.ai.assistant.sap.AdtConnectionManager;
 
 /**
- * A composite containing a label ("SAP System:") and a dropdown combo
- * populated with discovered and manually registered SAP system connections.
+ * A composite containing a label ("SAP System:"), a dropdown combo
+ * populated with discovered and manually registered SAP system connections,
+ * and a Remove button for deleting saved manual systems.
  * <p>
  * The last entry in the combo is always "Add Manual..." which, when
  * selected, opens a dialog to register a new SAP system connection.
+ * Manually added systems are automatically persisted to the Eclipse
+ * preference store and restored on subsequent launches.
  * </p>
  */
 public class SystemSelectorComposite extends Composite {
@@ -29,8 +38,12 @@ public class SystemSelectorComposite extends Composite {
     private static final String ADD_MANUAL_LABEL = "Add Manual...";
 
     private final Combo combo;
+    private final Button removeButton;
     private final AdtConnectionManager connectionManager;
     private final List<SapSystemConnection> systems;
+
+    /** Number of ADT-discovered systems (these cannot be removed). */
+    private int discoveredCount;
 
     /**
      * Create the system selector.
@@ -43,7 +56,12 @@ public class SystemSelectorComposite extends Composite {
         this.connectionManager = new AdtConnectionManager();
         this.systems = new ArrayList<>();
 
-        GridLayout layout = new GridLayout(2, false);
+        // Load previously saved systems from preferences
+        IPreferenceStore store = Activator.getDefault().getPreferenceStore();
+        String savedJson = store.getString(PreferenceConstants.SAP_SAVED_SYSTEMS);
+        connectionManager.loadSavedSystems(savedJson);
+
+        GridLayout layout = new GridLayout(3, false);
         layout.marginWidth = 0;
         layout.marginHeight = 0;
         setLayout(layout);
@@ -54,15 +72,21 @@ public class SystemSelectorComposite extends Composite {
         combo = new Combo(this, SWT.READ_ONLY | SWT.DROP_DOWN);
         combo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
+        removeButton = new Button(this, SWT.PUSH);
+        removeButton.setText("Remove");
+        removeButton.setEnabled(false);
+        removeButton.addListener(SWT.Selection, e -> handleRemoveSystem());
+
         refreshSystems();
 
-        // Handle selection of the "Add Manual..." entry
+        // Handle selection of the "Add Manual..." entry and update remove button
         combo.addListener(SWT.Selection, e -> {
             int idx = combo.getSelectionIndex();
             if (idx == combo.getItemCount() - 1) {
                 // Last item is "Add Manual..."
                 handleAddManual();
             }
+            updateRemoveButton();
         });
     }
 
@@ -80,14 +104,17 @@ public class SystemSelectorComposite extends Composite {
     }
 
     /**
-     * Enable or disable the combo. Typically called to freeze selection
-     * after the first message is sent.
+     * Enable or disable the combo and remove button. Typically called to
+     * freeze selection after the first message is sent.
      */
     @Override
     public void setEnabled(boolean enabled) {
         super.setEnabled(enabled);
         if (combo != null && !combo.isDisposed()) {
             combo.setEnabled(enabled);
+        }
+        if (removeButton != null && !removeButton.isDisposed()) {
+            removeButton.setEnabled(enabled && isManualSystemSelected());
         }
     }
 
@@ -103,6 +130,12 @@ public class SystemSelectorComposite extends Composite {
         combo.removeAll();
 
         List<SapSystemConnection> discovered = connectionManager.discoverSystems();
+        // discoverSystems() returns discovered + manual systems combined.
+        // We need to know the boundary so we can tell which are removable.
+        // Discovered systems come first, manual systems are appended.
+        int totalDiscovered = discovered.size() - connectionManager.getManualSystems().size();
+        discoveredCount = Math.max(0, totalDiscovered);
+
         systems.addAll(discovered);
 
         for (SapSystemConnection sys : systems) {
@@ -117,6 +150,8 @@ public class SystemSelectorComposite extends Composite {
         if (!systems.isEmpty()) {
             combo.select(0);
         }
+
+        updateRemoveButton();
     }
 
     /**
@@ -197,14 +232,71 @@ public class SystemSelectorComposite extends Composite {
         }
         String password = passDialog.getValue();
 
-        // Register and refresh
+        // Register, persist, and refresh
         String name = host + ":" + port + " [" + client + "]";
         connectionManager.addManualSystem(name, host, port, client, user, password);
+        persistSavedSystems();
         refreshSystems();
 
         // Select the newly added system (last in list before sentinel)
         if (systems.size() > 0) {
             combo.select(systems.size() - 1);
+        }
+        updateRemoveButton();
+    }
+
+    /**
+     * Remove the currently selected manual system after user confirmation.
+     */
+    private void handleRemoveSystem() {
+        int idx = combo.getSelectionIndex();
+        if (idx < 0 || idx < discoveredCount || idx >= systems.size()) {
+            return;
+        }
+
+        SapSystemConnection sys = systems.get(idx);
+        boolean confirmed = MessageDialog.openConfirm(getShell(),
+                "Remove SAP System",
+                "Remove saved system \"" + sys.getProjectName() + "\"?");
+        if (!confirmed) {
+            return;
+        }
+
+        int manualIdx = idx - discoveredCount;
+        connectionManager.removeManualSystem(manualIdx);
+        persistSavedSystems();
+        refreshSystems();
+    }
+
+    /**
+     * Persists the current manual systems list to the Eclipse preference store.
+     */
+    private void persistSavedSystems() {
+        List<SapSystemConnection> manual = connectionManager.getManualSystems();
+        List<SavedSapSystem> toSave = new ArrayList<>();
+        for (SapSystemConnection conn : manual) {
+            toSave.add(SavedSapSystem.fromConnection(conn));
+        }
+        String json = SavedSapSystem.toJson(toSave);
+        Activator.getDefault().getPreferenceStore()
+                .setValue(PreferenceConstants.SAP_SAVED_SYSTEMS, json);
+    }
+
+    /**
+     * Returns whether the currently selected system is a manually added one
+     * (and therefore removable).
+     */
+    private boolean isManualSystemSelected() {
+        int idx = combo.getSelectionIndex();
+        return idx >= discoveredCount && idx < systems.size();
+    }
+
+    /**
+     * Enable/disable the remove button based on the current selection.
+     */
+    private void updateRemoveButton() {
+        if (removeButton != null && !removeButton.isDisposed()) {
+            removeButton.setEnabled(isManualSystemSelected());
         }
     }
 
@@ -217,5 +309,6 @@ public class SystemSelectorComposite extends Composite {
         } else {
             combo.deselectAll();
         }
+        updateRemoveButton();
     }
 }

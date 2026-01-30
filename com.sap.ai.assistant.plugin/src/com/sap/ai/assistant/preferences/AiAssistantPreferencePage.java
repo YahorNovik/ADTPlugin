@@ -412,13 +412,15 @@ public class AiAssistantPreferencePage extends PreferencePage
         if (portDialog.open() != org.eclipse.jface.window.Window.OK) return;
         int port = Integer.parseInt(portDialog.getValue().trim());
 
-        // SSL: default based on parsed URL or common port conventions
-        boolean defaultSsl = parsedSsl || port == 443 || port == 44300 || port == 44301;
-        boolean useSsl = org.eclipse.jface.dialogs.MessageDialog.openQuestion(
-                getShell(), "Add SAP System",
-                "Use HTTPS (SSL) for this connection?\n\n"
-                + "Host: " + host + ":" + port + "\n"
-                + "(Current default: " + (defaultSsl ? "Yes" : "No") + ")");
+        // SSL: auto-detect from URL protocol or port convention
+        // http:// → no SSL; https:// → SSL; no protocol → SSL only for 443/44300
+        boolean hasExplicitProtocol = hostInput.startsWith("http://") || hostInput.startsWith("https://");
+        boolean useSsl;
+        if (hasExplicitProtocol) {
+            useSsl = parsedSsl;
+        } else {
+            useSsl = (port == 443 || port == 44300 || port == 44301);
+        }
 
         org.eclipse.jface.dialogs.InputDialog clientDialog =
                 new org.eclipse.jface.dialogs.InputDialog(
