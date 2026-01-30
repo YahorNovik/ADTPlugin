@@ -37,7 +37,9 @@ public abstract class AbstractLlmProvider implements LlmProvider {
                 .connectTimeout(Duration.ofSeconds(30))
                 .followRedirects(HttpClient.Redirect.NORMAL);
 
-        // Try to configure proxy
+        // Only configure a proxy if one is explicitly set.
+        // Do NOT call builder.proxy() at all when no proxy is needed —
+        // Java's default HttpClient uses a direct connection unless told otherwise.
         try {
             // 1. Check Java system properties
             String httpsProxyHost = System.getProperty("https.proxyHost");
@@ -54,16 +56,14 @@ public abstract class AbstractLlmProvider implements LlmProvider {
                 System.out.println("LLM HttpClient using proxy: " + proxyHost + ":" + port);
             } else {
                 // 2. Try Eclipse proxy settings via IProxyService
-                try {
-                    configureEclipseProxy(builder);
-                } catch (Exception e) {
-                    // Eclipse proxy service not available — use system default
-                    builder.proxy(ProxySelector.getDefault());
+                if (!configureEclipseProxy(builder)) {
+                    // No proxy found — use direct connection (don't call builder.proxy())
+                    System.out.println("LLM HttpClient using direct connection (no proxy)");
                 }
             }
         } catch (Exception e) {
             System.err.println("LLM HttpClient proxy setup failed: " + e.getMessage());
-            // Fall back to default (direct connection)
+            // Fall back to direct connection (no proxy configured)
         }
 
         return builder.build();
@@ -71,40 +71,71 @@ public abstract class AbstractLlmProvider implements LlmProvider {
 
     /**
      * Attempts to configure proxy from Eclipse's IProxyService.
+     *
+     * @return {@code true} if an Eclipse proxy was found and configured
      */
-    private void configureEclipseProxy(HttpClient.Builder builder) throws Exception {
-        // Use reflection to avoid hard dependency on org.eclipse.core.net
-        Class<?> proxyServiceClass = Class.forName("org.eclipse.core.net.proxy.IProxyService");
-        Object proxyService = org.eclipse.core.runtime.Platform.getBundle("org.eclipse.core.net")
-                .getBundleContext()
-                .getServiceReference(proxyServiceClass);
+    private boolean configureEclipseProxy(HttpClient.Builder builder) {
+        try {
+            // Use reflection to avoid hard dependency on org.eclipse.core.net
+            org.osgi.framework.Bundle netBundle =
+                    org.eclipse.core.runtime.Platform.getBundle("org.eclipse.core.net");
+            if (netBundle == null) {
+                return false;
+            }
 
-        if (proxyService != null) {
-            // Get proxy data for HTTPS
-            Object[] proxyDataArray = (Object[]) proxyServiceClass
-                    .getMethod("select", URI.class)
-                    .invoke(proxyService, URI.create("https://api.anthropic.com"));
+            org.osgi.framework.BundleContext ctx = netBundle.getBundleContext();
+            if (ctx == null) {
+                return false;
+            }
 
-            if (proxyDataArray != null && proxyDataArray.length > 0) {
-                Object proxyData = proxyDataArray[0];
-                Class<?> proxyDataClass = proxyData.getClass();
-                String type = (String) proxyDataClass.getMethod("getType").invoke(proxyData);
+            Class<?> proxyServiceClass = Class.forName("org.eclipse.core.net.proxy.IProxyService");
+            org.osgi.framework.ServiceReference<?> serviceRef = ctx.getServiceReference(proxyServiceClass);
+            if (serviceRef == null) {
+                return false;
+            }
 
-                if ("HTTP".equals(type) || "HTTPS".equals(type)) {
-                    String host = (String) proxyDataClass.getMethod("getHost").invoke(proxyData);
-                    int port = (int) proxyDataClass.getMethod("getPort").invoke(proxyData);
+            Object proxyService = ctx.getService(serviceRef);
+            if (proxyService == null) {
+                return false;
+            }
 
-                    if (host != null && !host.isEmpty() && port > 0) {
-                        builder.proxy(ProxySelector.of(new InetSocketAddress(host, port)));
-                        System.out.println("LLM HttpClient using Eclipse proxy: " + host + ":" + port);
-                        return;
+            try {
+                // Check if proxies are enabled
+                Boolean enabled = (Boolean) proxyServiceClass
+                        .getMethod("isProxiesEnabled").invoke(proxyService);
+                if (enabled == null || !enabled) {
+                    return false;
+                }
+
+                // Get proxy data for HTTPS
+                Object[] proxyDataArray = (Object[]) proxyServiceClass
+                        .getMethod("select", URI.class)
+                        .invoke(proxyService, URI.create("https://api.anthropic.com"));
+
+                if (proxyDataArray != null && proxyDataArray.length > 0) {
+                    Object proxyData = proxyDataArray[0];
+                    Class<?> proxyDataClass = proxyData.getClass();
+                    String type = (String) proxyDataClass.getMethod("getType").invoke(proxyData);
+
+                    if ("HTTP".equals(type) || "HTTPS".equals(type)) {
+                        String host = (String) proxyDataClass.getMethod("getHost").invoke(proxyData);
+                        int port = (int) proxyDataClass.getMethod("getPort").invoke(proxyData);
+
+                        if (host != null && !host.isEmpty() && port > 0) {
+                            builder.proxy(ProxySelector.of(new InetSocketAddress(host, port)));
+                            System.out.println("LLM HttpClient using Eclipse proxy: " + host + ":" + port);
+                            return true;
+                        }
                     }
                 }
+            } finally {
+                ctx.ungetService(serviceRef);
             }
+        } catch (Exception e) {
+            // Eclipse proxy service not available — that's fine
+            System.out.println("LLM HttpClient: Eclipse proxy check skipped: " + e.getMessage());
         }
-
-        // No Eclipse proxy configured — use system default
-        builder.proxy(ProxySelector.getDefault());
+        return false;
     }
 
     // -- HTTP helpers -------------------------------------------------------
