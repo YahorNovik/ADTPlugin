@@ -19,6 +19,9 @@ import org.eclipse.swt.widgets.TableColumn;
 import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Shell;
+import org.eclipse.jface.dialogs.Dialog;
+import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPreferencePage;
 
@@ -363,80 +366,150 @@ public class AiAssistantPreferencePage extends PreferencePage
     // -- SAP System management -----------------------------------------------
 
     private void handleSapSystemAdd() {
-        org.eclipse.jface.dialogs.InputDialog hostDialog =
-                new org.eclipse.jface.dialogs.InputDialog(
-                        getShell(), "Add SAP System",
-                        "Hostname or URL (e.g. myhost.sap.corp or http://myhost:8000):", "", null);
-        if (hostDialog.open() != org.eclipse.jface.window.Window.OK) return;
-        String hostInput = hostDialog.getValue().trim();
-        if (hostInput.isEmpty()) return;
+        AddSapSystemDialog dlg = new AddSapSystemDialog(getShell());
+        if (dlg.open() != org.eclipse.jface.window.Window.OK) return;
 
-        // Parse host input — user may enter a full URL, host:port, or just hostname
-        String host = hostInput;
-        int parsedPort = -1;
-        boolean parsedSsl = false;
+        SavedSapSystem sys = dlg.getResult();
+        if (sys != null) {
+            savedSapSystems.add(sys);
+            refreshSapSystemsTable();
+        }
+    }
 
-        if (host.startsWith("http://") || host.startsWith("https://")) {
-            parsedSsl = host.startsWith("https://");
-            host = host.replaceFirst("https?://", "");
+    /**
+     * Single dialog to add a SAP system — all fields on one screen.
+     */
+    private static class AddSapSystemDialog extends Dialog {
+
+        private Text urlText;
+        private Text clientText;
+        private Text userText;
+
+        private SavedSapSystem result;
+
+        protected AddSapSystemDialog(Shell parentShell) {
+            super(parentShell);
         }
-        // Strip trailing slash/path
-        int slashIdx = host.indexOf('/');
-        if (slashIdx >= 0) {
-            host = host.substring(0, slashIdx);
+
+        @Override
+        protected void configureShell(Shell newShell) {
+            super.configureShell(newShell);
+            newShell.setText("Add SAP System");
         }
-        // Extract port from host:port
-        int colonIdx = host.lastIndexOf(':');
-        if (colonIdx >= 0) {
-            try {
-                parsedPort = Integer.parseInt(host.substring(colonIdx + 1));
-                host = host.substring(0, colonIdx);
-            } catch (NumberFormatException ignored) {
-                // Not a port — keep host as-is
+
+        @Override
+        protected Control createDialogArea(Composite parent) {
+            Composite area = (Composite) super.createDialogArea(parent);
+
+            Composite container = new Composite(area, SWT.NONE);
+            container.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+            GridLayout gl = new GridLayout(2, false);
+            gl.marginWidth = 10;
+            gl.marginHeight = 10;
+            container.setLayout(gl);
+
+            // URL
+            Label urlLabel = new Label(container, SWT.NONE);
+            urlLabel.setText("System URL:");
+            urlText = new Text(container, SWT.BORDER);
+            urlText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+            urlText.setMessage("http://hostname:8000");
+
+            // Hint
+            new Label(container, SWT.NONE); // spacer
+            Label hint = new Label(container, SWT.NONE);
+            hint.setText("e.g. http://myhost.corp:8000  or  https://myhost:44300");
+            hint.setForeground(parent.getDisplay().getSystemColor(SWT.COLOR_WIDGET_NORMAL_SHADOW));
+
+            // Client
+            Label clientLabel = new Label(container, SWT.NONE);
+            clientLabel.setText("Client:");
+            clientText = new Text(container, SWT.BORDER);
+            clientText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+            clientText.setText("100");
+
+            // User
+            Label userLabel = new Label(container, SWT.NONE);
+            userLabel.setText("User:");
+            userText = new Text(container, SWT.BORDER);
+            userText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+            return area;
+        }
+
+        @Override
+        protected void createButtonsForButtonBar(Composite parent) {
+            createButton(parent, IDialogConstants.OK_ID, "Add", true);
+            createButton(parent, IDialogConstants.CANCEL_ID, IDialogConstants.CANCEL_LABEL, false);
+        }
+
+        @Override
+        protected void okPressed() {
+            String urlInput = urlText.getText().trim();
+            String client = clientText.getText().trim();
+            String user = userText.getText().trim();
+
+            if (urlInput.isEmpty()) {
+                setErrorMessage("URL is required");
+                return;
             }
+
+            // Parse the URL
+            String host = urlInput;
+            int port = 8000;
+            boolean useSsl = false;
+
+            if (host.startsWith("https://")) {
+                useSsl = true;
+                host = host.substring(8);
+            } else if (host.startsWith("http://")) {
+                useSsl = false;
+                host = host.substring(7);
+            }
+
+            // Strip trailing slash/path
+            int slashIdx = host.indexOf('/');
+            if (slashIdx >= 0) {
+                host = host.substring(0, slashIdx);
+            }
+
+            // Extract port from host:port
+            int colonIdx = host.lastIndexOf(':');
+            if (colonIdx >= 0) {
+                try {
+                    port = Integer.parseInt(host.substring(colonIdx + 1));
+                    host = host.substring(0, colonIdx);
+                } catch (NumberFormatException ignored) {
+                    // Not a port — keep host as-is, use default port
+                }
+            }
+
+            // If no explicit protocol, infer SSL from port
+            if (!urlInput.startsWith("http://") && !urlInput.startsWith("https://")) {
+                useSsl = (port == 443 || port == 8443
+                        || (port >= 44300 && port <= 44399));
+            }
+
+            if (host.isEmpty()) {
+                setErrorMessage("Invalid URL");
+                return;
+            }
+
+            if (client.isEmpty()) {
+                client = "100";
+            }
+
+            result = new SavedSapSystem(host, port, client, user, useSsl);
+            super.okPressed();
         }
 
-        String defaultPort = parsedPort > 0 ? String.valueOf(parsedPort) : "8000";
-        org.eclipse.jface.dialogs.InputDialog portDialog =
-                new org.eclipse.jface.dialogs.InputDialog(
-                        getShell(), "Add SAP System", "Port (e.g. 8000 for HTTP, 44300 for HTTPS):",
-                        defaultPort,
-                        input -> {
-                            try {
-                                int p = Integer.parseInt(input);
-                                return (p > 0 && p <= 65535) ? null : "Port must be 1-65535";
-                            } catch (NumberFormatException ex) {
-                                return "Invalid number";
-                            }
-                        });
-        if (portDialog.open() != org.eclipse.jface.window.Window.OK) return;
-        int port = Integer.parseInt(portDialog.getValue().trim());
-
-        // SSL: auto-detect from URL protocol or port convention
-        // http:// → no SSL; https:// → SSL; no protocol → SSL only for 443/44300
-        boolean hasExplicitProtocol = hostInput.startsWith("http://") || hostInput.startsWith("https://");
-        boolean useSsl;
-        if (hasExplicitProtocol) {
-            useSsl = parsedSsl;
-        } else {
-            useSsl = (port == 443 || port == 44300 || port == 44301);
+        private void setErrorMessage(String msg) {
+            org.eclipse.jface.dialogs.MessageDialog.openError(getShell(), "Add SAP System", msg);
         }
 
-        org.eclipse.jface.dialogs.InputDialog clientDialog =
-                new org.eclipse.jface.dialogs.InputDialog(
-                        getShell(), "Add SAP System",
-                        "Client number (e.g. 100):", "100", null);
-        if (clientDialog.open() != org.eclipse.jface.window.Window.OK) return;
-        String client = clientDialog.getValue().trim();
-
-        org.eclipse.jface.dialogs.InputDialog userDialog =
-                new org.eclipse.jface.dialogs.InputDialog(
-                        getShell(), "Add SAP System", "User name:", "", null);
-        if (userDialog.open() != org.eclipse.jface.window.Window.OK) return;
-        String user = userDialog.getValue().trim();
-
-        savedSapSystems.add(new SavedSapSystem(host, port, client, user, useSsl));
-        refreshSapSystemsTable();
+        public SavedSapSystem getResult() {
+            return result;
+        }
     }
 
     private void handleSapSystemRemove() {
