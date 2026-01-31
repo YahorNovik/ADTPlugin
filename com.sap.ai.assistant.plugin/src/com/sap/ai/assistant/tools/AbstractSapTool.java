@@ -77,4 +77,42 @@ public abstract class AbstractSapTool implements SapTool {
         }
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
+
+    /**
+     * Ensure a URL points to the source endpoint ({@code /source/main}),
+     * not just the object itself.
+     * <p>
+     * When the LLM passes an Eclipse workspace URI or an object URL like
+     * {@code /sap/bc/adt/programs/programs/ztest}, SAP APIs for source
+     * operations (syntax check, PUT source, lock/unlock) require the
+     * full source URL {@code /sap/bc/adt/programs/programs/ztest/source/main}.
+     * </p>
+     *
+     * @param url the ADT URL (may be object URL or source URL)
+     * @return the source URL with {@code /source/main} appended if needed
+     */
+    public static String ensureSourceUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return url;
+        }
+        // Strip query string for pattern matching
+        String path = url;
+        String query = "";
+        int qIdx = path.indexOf('?');
+        if (qIdx >= 0) {
+            query = path.substring(qIdx);
+            path = path.substring(0, qIdx);
+        }
+        // Already a source URL
+        if (path.contains("/source/")) {
+            return url;
+        }
+        // Known object types: append /source/main
+        if (path.matches(".*/programs/programs/[^/]+")
+                || path.matches(".*/oo/classes/[^/]+")
+                || path.matches(".*/oo/interfaces/[^/]+")) {
+            return path + "/source/main" + query;
+        }
+        return url;
+    }
 }

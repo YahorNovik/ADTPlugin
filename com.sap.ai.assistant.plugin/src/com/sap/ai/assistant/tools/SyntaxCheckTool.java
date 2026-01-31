@@ -80,7 +80,7 @@ public class SyntaxCheckTool extends AbstractSapTool {
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String url = arguments.get("url").getAsString();
+        String url = ensureSourceUrl(arguments.get("url").getAsString());
         String content = optString(arguments, "content");
         String mainUrl = optString(arguments, "mainUrl");
         String mainProgram = optString(arguments, "mainProgram");

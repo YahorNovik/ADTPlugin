@@ -67,7 +67,7 @@ public class SetSourceTool extends AbstractSapTool {
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String objectSourceUrl = arguments.get("objectSourceUrl").getAsString();
+        String objectSourceUrl = ensureSourceUrl(arguments.get("objectSourceUrl").getAsString());
         String source = arguments.get("source").getAsString();
         String transport = optString(arguments, "transport");
 

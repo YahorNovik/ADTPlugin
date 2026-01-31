@@ -5,15 +5,19 @@ import java.util.Collections;
 import java.util.List;
 
 import com.google.gson.JsonObject;
+import com.sap.ai.assistant.llm.AbstractLlmProvider;
 import com.sap.ai.assistant.llm.LlmException;
 import com.sap.ai.assistant.llm.LlmProvider;
 import com.sap.ai.assistant.model.ChatConversation;
 import com.sap.ai.assistant.model.ChatMessage;
 import com.sap.ai.assistant.model.DiffRequest;
+import com.sap.ai.assistant.model.RequestLogEntry;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
+import com.sap.ai.assistant.model.LlmProviderConfig;
 import com.sap.ai.assistant.sap.AdtRestClient;
+import com.sap.ai.assistant.tools.AbstractSapTool;
 import com.sap.ai.assistant.tools.SapTool;
 import com.sap.ai.assistant.tools.SapToolRegistry;
 import com.sap.ai.assistant.tools.SetSourceTool;
@@ -43,6 +47,7 @@ public class AgentLoop {
     private final LlmProvider llmProvider;
     private final SapToolRegistry toolRegistry;
     private final AdtRestClient restClient;
+    private final LlmProviderConfig config;
 
     /**
      * Creates a new agent loop.
@@ -50,18 +55,28 @@ public class AgentLoop {
      * @param llmProvider  the LLM provider to use for generating responses
      * @param toolRegistry the registry of available SAP tools
      * @param restClient   the ADT REST client (nullable; needed for diff preview)
+     * @param config       the LLM configuration (for logging model name)
      */
-    public AgentLoop(LlmProvider llmProvider, SapToolRegistry toolRegistry, AdtRestClient restClient) {
+    public AgentLoop(LlmProvider llmProvider, SapToolRegistry toolRegistry,
+                     AdtRestClient restClient, LlmProviderConfig config) {
         this.llmProvider = llmProvider;
         this.toolRegistry = toolRegistry;
         this.restClient = restClient;
+        this.config = config;
+    }
+
+    /**
+     * Creates a new agent loop.
+     */
+    public AgentLoop(LlmProvider llmProvider, SapToolRegistry toolRegistry, AdtRestClient restClient) {
+        this(llmProvider, toolRegistry, restClient, null);
     }
 
     /**
      * Creates a new agent loop without a REST client (no diff preview support).
      */
     public AgentLoop(LlmProvider llmProvider, SapToolRegistry toolRegistry) {
-        this(llmProvider, toolRegistry, null);
+        this(llmProvider, toolRegistry, null, null);
     }
 
     /**
@@ -101,18 +116,29 @@ public class AgentLoop {
 
                 // 1. Send conversation to LLM
                 ChatMessage response;
+                long requestStartMs = System.currentTimeMillis();
+                int msgCountBefore = conversation.getMessages().size();
                 try {
                     response = llmProvider.sendMessage(
                             conversation.getMessages(),
                             conversation.getSystemPrompt(),
                             toolDefinitions);
                 } catch (LlmException e) {
+                    // Log the failed request
+                    long durationMs = System.currentTimeMillis() - requestStartMs;
+                    emitLogEntry(callback, round, msgCountBefore, durationMs,
+                            null, e.getMessage(), null, conversation);
                     callback.onError(e);
                     return;
                 }
 
                 // 2. If no tool calls, this is the final response
                 if (!response.hasToolCalls()) {
+                    // Emit log entry (no tool details for final text response)
+                    emitLogEntry(callback, round, msgCountBefore,
+                            getRequestDurationMs(requestStartMs), response, null,
+                            null, conversation);
+
                     conversation.addAssistantMessage(response);
 
                     // Notify with the text content if present
@@ -132,10 +158,9 @@ public class AgentLoop {
                     callback.onTextToken(response.getTextContent());
                 }
 
-                // 4. Execute each tool call
+                // 4. Execute each tool call, capturing details for logging
                 List<ToolResult> results = new ArrayList<>();
-                boolean syntaxErrorsDetected = false;
-                StringBuilder syntaxErrorReport = new StringBuilder();
+                List<RequestLogEntry.ToolCallDetail> toolDetails = new ArrayList<>();
 
                 for (ToolCall toolCall : response.getToolCalls()) {
                     callback.onToolCallStart(toolCall);
@@ -143,30 +168,24 @@ public class AgentLoop {
                     ToolResult result = executeTool(toolCall, callback);
                     results.add(result);
 
-                    callback.onToolCallEnd(result);
+                    // Capture tool I/O for the dev log
+                    toolDetails.add(new RequestLogEntry.ToolCallDetail(
+                            toolCall.getName(),
+                            toolCall.getArguments() != null ? toolCall.getArguments().toString() : "",
+                            result.getContent(),
+                            result.isError()));
 
-                    // Auto syntax check after write tools
-                    if (isWriteTool(toolCall.getName()) && !result.isError()) {
-                        String errors = checkSyntaxAfterWrite(toolCall, result);
-                        if (errors != null) {
-                            syntaxErrorsDetected = true;
-                            syntaxErrorReport.append(errors);
-                        }
-                    }
+                    callback.onToolCallEnd(result);
                 }
+
+                // Emit log entry with tool call details
+                emitLogEntry(callback, round, msgCountBefore,
+                        getRequestDurationMs(requestStartMs), response, null,
+                        toolDetails, conversation);
 
                 // 5. Build tool results message and add to conversation
                 ChatMessage toolResultsMessage = ChatMessage.toolResults(results);
                 conversation.addAssistantMessage(toolResultsMessage);
-
-                // 6. If syntax errors detected, inject fix instruction
-                if (syntaxErrorsDetected) {
-                    String fixInstruction =
-                            "[SYSTEM] Syntax errors detected after writing source:\n"
-                            + syntaxErrorReport.toString()
-                            + "\nYou MUST fix these syntax errors and write the corrected source code.";
-                    conversation.addUserMessage(fixInstruction);
-                }
             }
 
             // Maximum rounds exceeded
@@ -240,84 +259,6 @@ public class AgentLoop {
         return SetSourceTool.NAME.equals(name) || WriteAndCheckTool.NAME.equals(name);
     }
 
-    /**
-     * Checks for syntax errors after a write tool execution.
-     * For {@code sap_write_and_check}: parses the existing result JSON.
-     * For {@code sap_set_source}: runs {@code sap_syntax_check} automatically.
-     *
-     * @return a formatted error string, or {@code null} if no errors
-     */
-    private String checkSyntaxAfterWrite(ToolCall toolCall, ToolResult result) {
-        try {
-            String toolName = toolCall.getName();
-
-            if (WriteAndCheckTool.NAME.equals(toolName)) {
-                // sap_write_and_check already includes syntax check results
-                return extractErrorsFromWriteAndCheckResult(result);
-            }
-
-            if (SetSourceTool.NAME.equals(toolName)) {
-                // sap_set_source does NOT run syntax check — run it now
-                return runSyntaxCheckForSetSource(toolCall);
-            }
-
-        } catch (Exception e) {
-            System.err.println("AgentLoop: auto syntax check failed: " + e.getMessage());
-        }
-        return null;
-    }
-
-    private String extractErrorsFromWriteAndCheckResult(ToolResult result) {
-        try {
-            String content = result.getContent();
-            if (content == null || content.isEmpty()) return null;
-            JsonObject json = com.google.gson.JsonParser.parseString(content).getAsJsonObject();
-            if (!json.has("hasErrors") || !json.get("hasErrors").getAsBoolean()) {
-                return null;
-            }
-            // Extract syntax messages
-            if (json.has("syntaxMessages")) {
-                return formatSyntaxMessages(json.getAsJsonArray("syntaxMessages"));
-            }
-            return "Syntax errors detected (no details available).";
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private String runSyntaxCheckForSetSource(ToolCall toolCall) {
-        if (toolRegistry == null) return null;
-        SapTool syntaxTool = toolRegistry.get("sap_syntax_check");
-        if (syntaxTool == null) return null;
-
-        try {
-            JsonObject args = toolCall.getArguments();
-            String sourceUrl = args.has("objectSourceUrl")
-                    ? args.get("objectSourceUrl").getAsString() : null;
-            if (sourceUrl == null || sourceUrl.isEmpty()) return null;
-
-            JsonObject checkArgs = new JsonObject();
-            checkArgs.addProperty("url", sourceUrl);
-
-            ToolResult checkResult = syntaxTool.execute(checkArgs);
-            if (checkResult == null || checkResult.isError()) return null;
-
-            String content = checkResult.getContent();
-            if (content == null) return null;
-            JsonObject json = com.google.gson.JsonParser.parseString(content).getAsJsonObject();
-            if (!json.has("hasErrors") || !json.get("hasErrors").getAsBoolean()) {
-                return null;
-            }
-            if (json.has("messages")) {
-                return formatSyntaxMessages(json.getAsJsonArray("messages"));
-            }
-            return "Syntax errors detected (no details available).";
-        } catch (Exception e) {
-            System.err.println("AgentLoop: auto syntax check for sap_set_source failed: " + e.getMessage());
-            return null;
-        }
-    }
-
     private String formatSyntaxMessages(com.google.gson.JsonArray messages) {
         if (messages == null || messages.size() == 0) return null;
         StringBuilder sb = new StringBuilder();
@@ -332,8 +273,9 @@ public class AgentLoop {
     }
 
     /**
-     * Intercepts a write tool call, fetches the current source, shows a diff
-     * preview to the user, and blocks until the user accepts, rejects, or edits.
+     * Intercepts a write tool call, validates syntax inline (without saving),
+     * and only shows a diff preview to the user when the code is error-free.
+     * Blocks until the user accepts, rejects, or edits.
      */
     private ToolResult executeWithDiffApproval(ToolCall toolCall, SapTool tool, AgentCallback callback) {
         try {
@@ -345,6 +287,16 @@ public class AgentLoop {
             // Resolve source URL and object name depending on the tool
             String sourceUrl = resolveSourceUrl(toolCall.getName(), args);
             String objectName = resolveObjectName(toolCall.getName(), args);
+
+            // Safety-net: validate syntax BEFORE showing diff to the user.
+            // If the code has errors, return them to the LLM without showing
+            // a diff or writing anything. The LLM should fix and retry.
+            String syntaxErrors = validateSourceBeforeWrite(sourceUrl, newSource);
+            if (syntaxErrors != null) {
+                return ToolResult.error(toolCall.getId(),
+                        "Syntax errors detected in proposed source code. "
+                        + "Fix these errors and call the write tool again:\n" + syntaxErrors);
+            }
 
             // Fetch current source from SAP (empty string if object is new)
             String oldSource = fetchCurrentSource(sourceUrl);
@@ -391,7 +343,8 @@ public class AgentLoop {
 
     private String resolveSourceUrl(String toolName, JsonObject args) {
         if (SetSourceTool.NAME.equals(toolName)) {
-            return args.has("objectSourceUrl") ? args.get("objectSourceUrl").getAsString() : "";
+            String raw = args.has("objectSourceUrl") ? args.get("objectSourceUrl").getAsString() : "";
+            return AbstractSapTool.ensureSourceUrl(raw);
         }
         // For WriteAndCheckTool, derive from type and name
         if (args.has("name") && args.has("objtype")) {
@@ -438,6 +391,142 @@ public class AgentLoop {
             // Object may not exist yet — treat as empty
         }
         return "";
+    }
+
+    /**
+     * Validates proposed source code using {@code sap_syntax_check} with the
+     * {@code content} parameter (inline check, no save to repository).
+     *
+     * @return formatted error string if syntax errors found, or {@code null} if clean
+     */
+    private String validateSourceBeforeWrite(String sourceUrl, String source) {
+        if (toolRegistry == null || source == null || source.isEmpty()) {
+            return null;
+        }
+        SapTool syntaxTool = toolRegistry.get("sap_syntax_check");
+        if (syntaxTool == null) {
+            return null; // Syntax check not available — skip validation
+        }
+        try {
+            JsonObject checkArgs = new JsonObject();
+            checkArgs.addProperty("url", sourceUrl);
+            checkArgs.addProperty("content", source); // Inline check — no save
+            ToolResult checkResult = syntaxTool.execute(checkArgs);
+            if (checkResult == null || checkResult.isError()) {
+                return null; // Check failed — don't block the write
+            }
+            String content = checkResult.getContent();
+            if (content == null) {
+                return null;
+            }
+            JsonObject json = com.google.gson.JsonParser.parseString(content).getAsJsonObject();
+            if (!json.has("hasErrors") || !json.get("hasErrors").getAsBoolean()) {
+                return null; // No errors
+            }
+            if (json.has("messages")) {
+                return formatSyntaxMessages(json.getAsJsonArray("messages"));
+            }
+            return "Syntax errors detected (no details available).";
+        } catch (Exception e) {
+            // If syntax check fails for any reason, don't block the write
+            System.err.println("AgentLoop: pre-write syntax validation failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private long getRequestDurationMs(long fallbackStartMs) {
+        if (llmProvider instanceof AbstractLlmProvider) {
+            return ((AbstractLlmProvider) llmProvider).getLastRequestDurationMs();
+        }
+        return System.currentTimeMillis() - fallbackStartMs;
+    }
+
+    private void emitLogEntry(AgentCallback callback, int round, int msgCount,
+                              long durationMs, ChatMessage response, String error,
+                              List<RequestLogEntry.ToolCallDetail> toolDetails,
+                              ChatConversation conversation) {
+        String[] toolNames = null;
+        int toolCallCount = 0;
+        if (response != null && response.hasToolCalls()) {
+            toolCallCount = response.getToolCalls().size();
+            toolNames = response.getToolCalls().stream()
+                    .map(ToolCall::getName).toArray(String[]::new);
+        }
+        String llmText = (response != null) ? response.getTextContent() : null;
+        String sysPrompt = (conversation != null) ? conversation.getSystemPrompt() : null;
+        String convSnapshot = (conversation != null)
+                ? formatConversationSnapshot(conversation.getMessages())
+                : null;
+
+        RequestLogEntry entry = new RequestLogEntry(
+                round + 1,
+                llmProvider.getProviderId(),
+                config != null ? config.getModel() : "unknown",
+                msgCount,
+                durationMs,
+                response != null ? response.getUsage() : null,
+                toolCallCount,
+                toolNames,
+                error,
+                llmText,
+                toolDetails,
+                sysPrompt,
+                convSnapshot);
+        callback.onRequestComplete(entry);
+    }
+
+    /**
+     * Formats conversation messages into a readable snapshot for the dev log.
+     * Tool call arguments and results are truncated to keep the snapshot
+     * navigable; full details are available in the per-round tool details section.
+     */
+    private String formatConversationSnapshot(List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < messages.size(); i++) {
+            ChatMessage msg = messages.get(i);
+            sb.append("[").append(i + 1).append("] ").append(msg.getRole().name()).append(": ");
+
+            // Text content
+            if (msg.getTextContent() != null && !msg.getTextContent().isEmpty()) {
+                sb.append(msg.getTextContent());
+            }
+
+            // Tool calls (assistant requesting tools)
+            if (msg.hasToolCalls()) {
+                if (msg.getTextContent() != null && !msg.getTextContent().isEmpty()) {
+                    sb.append("\n    ");
+                }
+                sb.append("-> tool_calls: ");
+                for (int j = 0; j < msg.getToolCalls().size(); j++) {
+                    if (j > 0) sb.append(", ");
+                    ToolCall tc = msg.getToolCalls().get(j);
+                    sb.append(tc.getName());
+                    if (tc.getArguments() != null) {
+                        String args = tc.getArguments().toString();
+                        sb.append("(").append(truncate(args, 200)).append(")");
+                    }
+                }
+            }
+
+            // Tool results
+            if (!msg.getToolResults().isEmpty()) {
+                for (ToolResult tr : msg.getToolResults()) {
+                    sb.append("\n    ");
+                    if (tr.isError()) sb.append("[ERROR] ");
+                    sb.append(truncate(tr.getContent(), 300));
+                }
+            }
+
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null) return "";
+        if (s.length() <= maxLen) return s;
+        return s.substring(0, maxLen) + "...(" + s.length() + " chars)";
     }
 
     /**
