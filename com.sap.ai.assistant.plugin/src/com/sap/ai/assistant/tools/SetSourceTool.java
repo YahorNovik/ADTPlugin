@@ -71,6 +71,15 @@ public class SetSourceTool extends AbstractSapTool {
         String source = arguments.get("source").getAsString();
         String transport = optString(arguments, "transport");
 
+        return lockWriteUnlock(objectSourceUrl, source, transport, 1);
+    }
+
+    /**
+     * Lock, write, and unlock with retry on HTTP 423 (invalid lock handle).
+     * On 423, unlocks the stale handle, re-acquires a fresh lock, and retries once.
+     */
+    private ToolResult lockWriteUnlock(String objectSourceUrl, String source,
+                                        String transport, int attempt) throws Exception {
         // Step 1: Lock the source URL
         String lockPath = objectSourceUrl + "?_action=LOCK&accessMode=MODIFY";
         HttpResponse<String> lockResp = client.post(lockPath, "",
@@ -97,14 +106,27 @@ public class SetSourceTool extends AbstractSapTool {
             output.addProperty("status", "success");
             output.addProperty("statusCode", response.statusCode());
             return ToolResult.success(null, output.toString());
-        } finally {
-            // Step 3: Always unlock
-            try {
-                String unlockPath = objectSourceUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
-                client.post(unlockPath, "", "application/*", "application/*");
-            } catch (Exception e) {
-                System.err.println("SetSourceTool: auto-unlock failed: " + e.getMessage());
+
+        } catch (java.io.IOException e) {
+            // On 423 (invalid lock handle), retry once with a fresh lock
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            if (msg.contains("HTTP 423") && attempt < 2) {
+                System.err.println("SetSourceTool: lock handle rejected (423), retrying...");
+                safeUnlock(objectSourceUrl, lockHandle);
+                return lockWriteUnlock(objectSourceUrl, source, transport, attempt + 1);
             }
+            throw e;
+        } finally {
+            safeUnlock(objectSourceUrl, lockHandle);
+        }
+    }
+
+    private void safeUnlock(String objectSourceUrl, String lockHandle) {
+        try {
+            String unlockPath = objectSourceUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
+            client.post(unlockPath, "", "application/*", "application/*");
+        } catch (Exception e) {
+            // Ignore -- lock may already be released or handle invalid
         }
     }
 }

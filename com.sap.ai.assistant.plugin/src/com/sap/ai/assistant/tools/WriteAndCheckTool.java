@@ -132,7 +132,6 @@ public class WriteAndCheckTool extends AbstractSapTool {
         String description = arguments.get("description").getAsString();
         String source = arguments.get("source").getAsString();
         String transport = optString(arguments, "transport");
-        String lockHandle = null;
 
         JsonObject output = new JsonObject();
         boolean created = false;
@@ -242,39 +241,9 @@ public class WriteAndCheckTool extends AbstractSapTool {
         output.addProperty("sourceUrl", sourceUrl);
 
         // ----------------------------------------------------------
-        // Step 4: Lock the source URL
+        // Step 4+5: Lock and write source (with retry on 423)
         // ----------------------------------------------------------
-        String lockPath = sourceUrl + "?_action=LOCK&accessMode=MODIFY";
-        HttpResponse<String> lockResp = client.post(lockPath, "",
-                "application/*",
-                "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
-        lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
-
-        if (lockHandle == null || lockHandle.isEmpty()) {
-            return ToolResult.error(null,
-                    "Failed to acquire lock on " + sourceUrl + ". Response: " + lockResp.body());
-        }
-
-        // ----------------------------------------------------------
-        // Step 5: Write source code (lockHandle as query parameter per ADT API spec)
-        // ----------------------------------------------------------
-        try {
-            String separator = sourceUrl.contains("?") ? "&" : "?";
-            String writePath = sourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
-            if (transport != null && !transport.isEmpty()) {
-                writePath = writePath + "&corrNr=" + urlEncode(transport);
-            }
-
-            client.put(writePath, source, "text/plain; charset=utf-8");
-        } finally {
-            // Always unlock after writing (regardless of success/failure)
-            try {
-                String unlockPath = sourceUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
-                client.post(unlockPath, "", "application/*", "application/*");
-            } catch (Exception unlockEx) {
-                System.err.println("WriteAndCheckTool: auto-unlock failed: " + unlockEx.getMessage());
-            }
-        }
+        lockWriteUnlock(sourceUrl, source, transport);
 
         // ----------------------------------------------------------
         // Step 6: Syntax check
@@ -324,6 +293,57 @@ public class WriteAndCheckTool extends AbstractSapTool {
     // ------------------------------------------------------------------
     // Private helpers
     // ------------------------------------------------------------------
+
+    /**
+     * Lock, write, and unlock with retry on HTTP 423 (invalid lock handle).
+     */
+    private void lockWriteUnlock(String sourceUrl, String source,
+                                  String transport) throws Exception {
+        lockWriteUnlockAttempt(sourceUrl, source, transport, 1);
+    }
+
+    private void lockWriteUnlockAttempt(String sourceUrl, String source,
+                                         String transport, int attempt) throws Exception {
+        String lockPath = sourceUrl + "?_action=LOCK&accessMode=MODIFY";
+        HttpResponse<String> lockResp = client.post(lockPath, "",
+                "application/*",
+                "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
+        String lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
+
+        if (lockHandle == null || lockHandle.isEmpty()) {
+            throw new java.io.IOException(
+                    "Failed to acquire lock on " + sourceUrl + ". Response: " + lockResp.body());
+        }
+
+        try {
+            String separator = sourceUrl.contains("?") ? "&" : "?";
+            String writePath = sourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
+            if (transport != null && !transport.isEmpty()) {
+                writePath = writePath + "&corrNr=" + urlEncode(transport);
+            }
+            client.put(writePath, source, "text/plain; charset=utf-8");
+        } catch (java.io.IOException e) {
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            if (msg.contains("HTTP 423") && attempt < 2) {
+                System.err.println("WriteAndCheckTool: lock handle rejected (423), retrying...");
+                safeUnlock(sourceUrl, lockHandle);
+                lockWriteUnlockAttempt(sourceUrl, source, transport, attempt + 1);
+                return;
+            }
+            throw e;
+        } finally {
+            safeUnlock(sourceUrl, lockHandle);
+        }
+    }
+
+    private void safeUnlock(String sourceUrl, String lockHandle) {
+        try {
+            String unlockPath = sourceUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
+            client.post(unlockPath, "", "application/*", "application/*");
+        } catch (Exception e) {
+            // Ignore -- lock may already be released or handle invalid
+        }
+    }
 
     private String buildCreationXml(String objtype, String name, String parentName,
                                      String description, String parentPath) {
