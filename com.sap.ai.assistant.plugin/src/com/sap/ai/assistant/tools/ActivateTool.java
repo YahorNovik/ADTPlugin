@@ -52,8 +52,7 @@ public class ActivateTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Activate an ABAP repository object (make the inactive version active). "
-                        + "Call this after writing source code to compile and activate the object.",
+                "Activate an ABAP object (make inactive version active).",
                 schema);
     }
 

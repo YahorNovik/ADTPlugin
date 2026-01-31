@@ -21,7 +21,7 @@ public class ChatConversation {
      * Default maximum number of messages to retain in the conversation.
      * This keeps roughly the last 5 user/assistant/tool exchanges.
      */
-    public static final int DEFAULT_MAX_MESSAGES = 12;
+    public static final int DEFAULT_MAX_MESSAGES = 8;
 
     private final List<ChatMessage> messages;
     private String systemPrompt;

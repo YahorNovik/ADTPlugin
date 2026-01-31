@@ -57,8 +57,7 @@ public class SearchObjectTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Search for ABAP repository objects (programs, classes, interfaces, etc.) by name pattern. "
-                        + "Returns a list of matching objects with their names, types, URIs, descriptions, and package names.",
+                "Search for ABAP objects by name pattern. Returns names, types, and URIs.",
                 schema);
     }
 

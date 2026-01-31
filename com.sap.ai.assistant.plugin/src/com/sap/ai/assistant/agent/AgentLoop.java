@@ -2,7 +2,9 @@ package com.sap.ai.assistant.agent;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -129,6 +131,18 @@ public class AgentLoop {
                     return;
                 }
 
+                // After round 0, strip source code from system prompt to save tokens
+                // (the LLM already has the source from the first round's context)
+                if (round == 1) {
+                    String sp = conversation.getSystemPrompt();
+                    if (sp != null) {
+                        int srcIdx = sp.indexOf("\n### Source Code\n");
+                        if (srcIdx >= 0) {
+                            conversation.setSystemPrompt(sp.substring(0, srcIdx) + "\n");
+                        }
+                    }
+                }
+
                 // Trim conversation to prevent token snowball on long interactions
                 conversation.trimMessages();
 
@@ -182,18 +196,32 @@ public class AgentLoop {
                     callback.onTextToken(response.getTextContent());
                 }
 
-                // 4. Execute each tool call, capturing details for logging
+                // 4. Execute each tool call, capturing details for logging.
+                //    Deduplicate identical calls: execute once, reuse result.
                 List<ToolResult> results = new ArrayList<>();
                 List<RequestLogEntry.ToolCallDetail> toolDetails = new ArrayList<>();
+                Map<String, ToolResult> toolCallCache = new HashMap<>();
 
                 for (ToolCall toolCall : response.getToolCalls()) {
                     callback.onToolCallStart(toolCall);
 
-                    ToolResult result = executeTool(toolCall, callback);
+                    String callSignature = toolCall.getName() + "|"
+                            + (toolCall.getArguments() != null ? toolCall.getArguments().toString() : "");
 
-                    // Compact verbose SAP XML error messages before they enter the conversation
-                    if (result.isError()) {
-                        result = compactErrorResult(result);
+                    ToolResult result;
+                    if (toolCallCache.containsKey(callSignature)) {
+                        // Reuse cached result with this call's ID
+                        ToolResult cached = toolCallCache.get(callSignature);
+                        result = cached.isError()
+                                ? ToolResult.error(toolCall.getId(), cached.getContent())
+                                : ToolResult.success(toolCall.getId(), cached.getContent());
+                    } else {
+                        result = executeTool(toolCall, callback);
+                        // Compact verbose SAP XML error messages before they enter the conversation
+                        if (result.isError()) {
+                            result = compactErrorResult(result);
+                        }
+                        toolCallCache.put(callSignature, result);
                     }
 
                     results.add(result);

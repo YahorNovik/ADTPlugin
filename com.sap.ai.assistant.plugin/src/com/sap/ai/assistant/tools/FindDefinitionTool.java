@@ -73,8 +73,7 @@ public class FindDefinitionTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Find the definition location of an ABAP element (class, method, variable, type, etc.) "
-                        + "given a source position. Returns the URI and position of the definition.",
+                "Find definition of an ABAP element at a source position.",
                 schema);
     }
 

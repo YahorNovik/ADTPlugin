@@ -51,8 +51,7 @@ public class LockTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Lock an ABAP repository object for editing. Returns a lock handle that must be "
-                        + "passed to sap_set_source when writing code. Remember to call sap_unlock when done.",
+                "Lock an ABAP object for editing. Returns a lock handle.",
                 schema);
     }
 

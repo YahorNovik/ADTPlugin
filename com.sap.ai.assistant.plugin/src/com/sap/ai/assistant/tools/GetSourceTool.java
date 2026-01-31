@@ -50,9 +50,7 @@ public class GetSourceTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Retrieve the ABAP source code of a repository object. "
-                        + "Returns the plain text source code. Use sap_search_object first to find the object, "
-                        + "then sap_object_structure to get the source URL.",
+                "Retrieve ABAP source code of a repository object.",
                 schema);
     }
 

@@ -118,8 +118,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Composite tool: search/create an ABAP object, lock it, write source code, unlock, and run a syntax check "
-                        + "-- all in one call. Locking and unlocking are handled automatically.",
+                "Search/create object, write source, and syntax check — all in one call.",
                 schema);
     }
 
@@ -326,14 +325,13 @@ public class WriteAndCheckTool extends AbstractSapTool {
 
     private void lockWriteUnlockAttempt(String sourceUrl, String source,
                                          String transport) throws Exception {
-        // Lock and unlock target the OBJECT URL (without /source/main),
-        // while the PUT targets the SOURCE URL -- matching SAP ADT protocol.
-        String objectUrl = toObjectUrl(sourceUrl);
+        // Programs: lock the INCLUDE (source URL). Classes/interfaces: lock the object URL.
+        String lockUrl = toLockUrl(sourceUrl);
 
-        System.err.println("WriteAndCheckTool: LOCK on objectUrl=" + objectUrl);
+        System.err.println("WriteAndCheckTool: LOCK on lockUrl=" + lockUrl);
         System.err.println("WriteAndCheckTool: PUT will target sourceUrl=" + sourceUrl);
 
-        String lockPath = objectUrl + "?_action=LOCK&accessMode=MODIFY";
+        String lockPath = lockUrl + "?_action=LOCK&accessMode=MODIFY";
         HttpResponse<String> lockResp = client.post(lockPath, "",
                 "application/*",
                 "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result;q=0.8, "
@@ -343,7 +341,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
 
         if (lockHandle == null || lockHandle.isEmpty()) {
             throw new java.io.IOException(
-                    "Failed to acquire lock on " + objectUrl + ". Response: " + lockResp.body());
+                    "Failed to acquire lock on " + lockUrl + ". Response: " + lockResp.body());
         }
 
         try {
@@ -353,13 +351,13 @@ public class WriteAndCheckTool extends AbstractSapTool {
             }
             client.put(writePath, source, "text/plain; charset=utf-8");
         } finally {
-            safeUnlock(objectUrl, lockHandle);
+            safeUnlock(lockUrl, lockHandle);
         }
     }
 
-    private void safeUnlock(String objectUrl, String lockHandle) {
+    private void safeUnlock(String lockUrl, String lockHandle) {
         try {
-            String unlockPath = objectUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
+            String unlockPath = lockUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
             client.post(unlockPath, "", "application/*", "application/*");
         } catch (Exception e) {
             // Ignore -- lock may already be released or handle invalid

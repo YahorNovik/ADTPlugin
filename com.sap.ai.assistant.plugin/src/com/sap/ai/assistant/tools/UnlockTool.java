@@ -51,8 +51,7 @@ public class UnlockTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Release the lock on an ABAP repository object. Always call this after finishing edits "
-                        + "to avoid leaving orphaned locks.",
+                "Unlock an ABAP object after editing.",
                 schema);
     }
 

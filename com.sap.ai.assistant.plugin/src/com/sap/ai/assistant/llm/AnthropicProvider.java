@@ -73,16 +73,30 @@ public class AnthropicProvider extends AbstractLlmProvider {
         body.addProperty("model", config.getModel());
         body.addProperty("max_tokens", config.getMaxTokens() > 0 ? config.getMaxTokens() : 8192);
 
-        // System prompt
+        // System prompt (with cache_control for Anthropic prompt caching)
         if (systemPrompt != null && !systemPrompt.isEmpty()) {
-            body.addProperty("system", systemPrompt);
+            JsonArray systemArr = new JsonArray();
+            JsonObject systemBlock = new JsonObject();
+            systemBlock.addProperty("type", "text");
+            systemBlock.addProperty("text", systemPrompt);
+            JsonObject cacheControl = new JsonObject();
+            cacheControl.addProperty("type", "ephemeral");
+            systemBlock.add("cache_control", cacheControl);
+            systemArr.add(systemBlock);
+            body.add("system", systemArr);
         }
 
-        // Tools
+        // Tools (with cache_control on last tool for prompt caching)
         if (tools != null && !tools.isEmpty()) {
             JsonArray toolsArr = new JsonArray();
-            for (ToolDefinition tool : tools) {
-                toolsArr.add(ToolSchemaConverter.toAnthropicTool(tool));
+            for (int i = 0; i < tools.size(); i++) {
+                JsonObject tool = ToolSchemaConverter.toAnthropicTool(tools.get(i));
+                if (i == tools.size() - 1) {
+                    JsonObject cc = new JsonObject();
+                    cc.addProperty("type", "ephemeral");
+                    tool.add("cache_control", cc);
+                }
+                toolsArr.add(tool);
             }
             body.add("tools", toolsArr);
         }

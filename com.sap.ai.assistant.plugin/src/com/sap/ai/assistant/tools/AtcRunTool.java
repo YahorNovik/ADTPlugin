@@ -58,8 +58,7 @@ public class AtcRunTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Run the ABAP Test Cockpit (ATC) quality checks on a repository object. Returns a worklist "
-                        + "of findings including priority, check title, message, and location.",
+                "Run ATC quality checks. Returns findings with priority and messages.",
                 schema);
     }
 

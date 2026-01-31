@@ -75,10 +75,7 @@ public class SyntaxCheckTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Run an ABAP syntax check. When the `content` parameter is provided, checks the given "
-                        + "source code WITHOUT saving it to the repository — use this to validate generated code "
-                        + "before writing. When `content` is omitted, checks the already-saved version. "
-                        + "Returns errors and warnings with line numbers, severity, and message text.",
+                "Check ABAP syntax. With `content`, validates without saving. Returns errors with line numbers.",
                 schema);
     }
 

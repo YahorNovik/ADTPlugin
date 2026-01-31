@@ -57,8 +57,7 @@ public class NodeContentsTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Browse the ABAP repository tree to list objects inside a package or container. "
-                        + "Returns child nodes with name, type, URI, description, and whether they are expandable.",
+                "List objects inside a package or repository container.",
                 schema);
     }
 

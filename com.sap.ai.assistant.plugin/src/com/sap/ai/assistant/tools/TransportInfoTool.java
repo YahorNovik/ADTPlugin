@@ -50,8 +50,7 @@ public class TransportInfoTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Get transport request information for an ABAP object. Returns available transport "
-                        + "requests and whether the object is local ($TMP) or transportable.",
+                "Get transport request info for an ABAP object.",
                 schema);
     }
 

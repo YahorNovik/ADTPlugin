@@ -61,8 +61,7 @@ public class RunUnitTestTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Run ABAP Unit (AUnit) tests on a repository object. Returns test results with "
-                        + "pass/fail status, execution time, and failure details per test class and method.",
+                "Run ABAP Unit tests. Returns pass/fail per test class and method.",
                 schema);
     }
 

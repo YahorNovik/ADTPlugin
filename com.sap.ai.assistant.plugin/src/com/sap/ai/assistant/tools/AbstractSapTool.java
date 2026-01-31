@@ -122,14 +122,28 @@ public abstract class AbstractSapTool implements SapTool {
     }
 
     /**
+     * Determine the correct URL for lock/unlock operations.
+     * <p>
+     * For <b>programs</b>, SAP locks at the INCLUDE level, so the lock
+     * must target the <b>source URL</b> (with {@code /source/main}).
+     * For <b>classes</b> and <b>interfaces</b>, SAP locks at the object
+     * level, so the lock must target the <b>object URL</b> (without
+     * {@code /source/main}).
+     * </p>
+     *
+     * @param sourceUrl the full source URL
+     * @return the URL to use for LOCK/UNLOCK operations
+     */
+    public static String toLockUrl(String sourceUrl) {
+        if (sourceUrl != null && sourceUrl.contains("/programs/programs/")) {
+            return sourceUrl; // Programs: lock the INCLUDE (source URL)
+        }
+        return toObjectUrl(sourceUrl); // Classes/interfaces: lock the object URL
+    }
+
+    /**
      * Derive the object URL from a source URL by stripping the
      * {@code /source/...} suffix.
-     * <p>
-     * SAP ADT requires that lock/unlock operations target the
-     * <b>object URL</b> (e.g. {@code /sap/bc/adt/programs/programs/ztest}),
-     * while write (PUT) operations target the <b>source URL</b>
-     * (e.g. {@code /sap/bc/adt/programs/programs/ztest/source/main}).
-     * </p>
      *
      * @param sourceUrl the full source URL
      * @return the object URL (without {@code /source/...})

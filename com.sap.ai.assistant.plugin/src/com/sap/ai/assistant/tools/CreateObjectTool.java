@@ -103,8 +103,7 @@ public class CreateObjectTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Create a new ABAP repository object (program, class, interface, function group, etc.). "
-                        + "Specify the object type, name, parent package, and a short description.",
+                "Create a new ABAP object (program, class, interface, etc.).",
                 schema);
     }
 

@@ -52,8 +52,7 @@ public class ObjectStructureTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Get the structure/metadata of an ABAP repository object including its links, includes, "
-                        + "and source URLs. Use this after sap_search_object to discover the source URL for reading/writing code.",
+                "Get structure/metadata of an ABAP object including source URLs.",
                 schema);
     }
 

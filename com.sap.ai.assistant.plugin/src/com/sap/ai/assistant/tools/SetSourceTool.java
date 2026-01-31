@@ -59,9 +59,7 @@ public class SetSourceTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Write ABAP source code to a repository object. Automatically locks the object before writing "
-                        + "and unlocks it afterwards. Provide the full source code, the source URL, "
-                        + "and optionally a transport request.",
+                "Write ABAP source code. Locks, writes, and unlocks automatically.",
                 schema);
     }
 
@@ -104,15 +102,14 @@ public class SetSourceTool extends AbstractSapTool {
 
     private ToolResult lockWriteUnlockAttempt(String sourceUrl, String source,
                                                String transport) throws Exception {
-        // Lock and unlock target the OBJECT URL (without /source/main),
-        // while the PUT targets the SOURCE URL -- matching SAP ADT protocol.
-        String objectUrl = toObjectUrl(sourceUrl);
+        // Programs: lock the INCLUDE (source URL). Classes/interfaces: lock the object URL.
+        String lockUrl = toLockUrl(sourceUrl);
 
-        System.err.println("SetSourceTool: LOCK on objectUrl=" + objectUrl);
+        System.err.println("SetSourceTool: LOCK on lockUrl=" + lockUrl);
         System.err.println("SetSourceTool: PUT will target sourceUrl=" + sourceUrl);
 
-        // Step 1: Lock the object
-        String lockPath = objectUrl + "?_action=LOCK&accessMode=MODIFY";
+        // Step 1: Lock
+        String lockPath = lockUrl + "?_action=LOCK&accessMode=MODIFY";
         HttpResponse<String> lockResp = client.post(lockPath, "",
                 "application/*",
                 "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result;q=0.8, "
@@ -122,7 +119,7 @@ public class SetSourceTool extends AbstractSapTool {
 
         if (lockHandle == null || lockHandle.isEmpty()) {
             return ToolResult.error(null,
-                    "Failed to acquire lock on " + objectUrl + ". Response: " + lockResp.body());
+                    "Failed to acquire lock on " + lockUrl + ". Response: " + lockResp.body());
         }
 
         try {
@@ -139,13 +136,13 @@ public class SetSourceTool extends AbstractSapTool {
             output.addProperty("statusCode", response.statusCode());
             return ToolResult.success(null, output.toString());
         } finally {
-            safeUnlock(objectUrl, lockHandle);
+            safeUnlock(lockUrl, lockHandle);
         }
     }
 
-    private void safeUnlock(String objectUrl, String lockHandle) {
+    private void safeUnlock(String lockUrl, String lockHandle) {
         try {
-            String unlockPath = objectUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
+            String unlockPath = lockUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
             client.post(unlockPath, "", "application/*", "application/*");
         } catch (Exception e) {
             // Ignore -- lock may already be released or handle invalid

@@ -56,8 +56,7 @@ public class UsageReferencesTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Find all usages (where-used list) of an ABAP element such as a class, interface, method, "
-                        + "function module, or data element. Returns a list of locations where the element is referenced.",
+                "Find all usages (where-used) of an ABAP element.",
                 schema);
     }
 
