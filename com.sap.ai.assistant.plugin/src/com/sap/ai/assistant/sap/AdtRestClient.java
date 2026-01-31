@@ -40,6 +40,7 @@ import javax.net.ssl.X509TrustManager;
 public class AdtRestClient {
 
     private static final String CSRF_TOKEN_HEADER = "x-csrf-token";
+    private static final String SESSION_TYPE_HEADER = "X-sap-adt-sessiontype";
     private static final String DISCOVERY_PATH = "/sap/bc/adt/core/discovery";
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60);
 
@@ -195,6 +196,7 @@ public class AdtRestClient {
                 .uri(URI.create(url))
                 .header("Authorization", basicAuthHeader())
                 .header(CSRF_TOKEN_HEADER, "Fetch")
+                .header(SESSION_TYPE_HEADER, "stateful")
                 .header("Accept", "application/atomsvc+xml")
                 .header("Accept-Language", language)
                 .timeout(REQUEST_TIMEOUT)
@@ -244,6 +246,7 @@ public class AdtRestClient {
                 .header("Authorization", basicAuthHeader())
                 .header("Accept", accept)
                 .header("Accept-Language", language)
+                .header(SESSION_TYPE_HEADER, "stateful")
                 .timeout(REQUEST_TIMEOUT)
                 .GET();
 
@@ -274,6 +277,7 @@ public class AdtRestClient {
                 .header("Content-Type", contentType)
                 .header("Accept", accept)
                 .header("Accept-Language", language)
+                .header(SESSION_TYPE_HEADER, "stateful")
                 .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(body));
 
@@ -302,6 +306,7 @@ public class AdtRestClient {
                 .header("Authorization", basicAuthHeader())
                 .header("Content-Type", contentType)
                 .header("Accept-Language", language)
+                .header(SESSION_TYPE_HEADER, "stateful")
                 .timeout(REQUEST_TIMEOUT)
                 .PUT(HttpRequest.BodyPublishers.ofString(body));
 
@@ -333,6 +338,7 @@ public class AdtRestClient {
                 .header("Authorization", basicAuthHeader())
                 .header("Content-Type", contentType)
                 .header("Accept-Language", language)
+                .header(SESSION_TYPE_HEADER, "stateful")
                 .timeout(REQUEST_TIMEOUT)
                 .PUT(HttpRequest.BodyPublishers.ofString(body));
 
@@ -363,6 +369,7 @@ public class AdtRestClient {
                 .uri(URI.create(url))
                 .header("Authorization", basicAuthHeader())
                 .header("Accept-Language", language)
+                .header(SESSION_TYPE_HEADER, "stateful")
                 .timeout(REQUEST_TIMEOUT)
                 .DELETE();
 
@@ -521,6 +528,7 @@ public class AdtRestClient {
                 .uri(URI.create(url))
                 .header("Authorization", basicAuthHeader())
                 .header(CSRF_TOKEN_HEADER, "Fetch")
+                .header(SESSION_TYPE_HEADER, "stateful")
                 .header("Accept", "application/atomsvc+xml")
                 .header("Accept-Language", language)
                 .timeout(REQUEST_TIMEOUT)

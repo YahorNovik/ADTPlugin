@@ -124,30 +124,23 @@ public abstract class AbstractSapTool implements SapTool {
     /**
      * Determine the correct URL for lock/unlock operations.
      * <p>
-     * For <b>programs</b>, SAP locks at the INCLUDE level. The INCLUDE
-     * resource lives at {@code /sap/bc/adt/programs/includes/{name}},
-     * while the program itself is at {@code /sap/bc/adt/programs/programs/{name}}.
-     * The lock must target the include object URL.
+     * All object types (programs, classes, interfaces) are locked at their
+     * <b>object URL</b> (without {@code /source/main}). This matches the
+     * approach used by all known working ADT client implementations
+     * (abap-adt-api, abap-adt-py, adt-mcp-server).
      * </p>
      * <p>
-     * For <b>classes</b> and <b>interfaces</b>, SAP locks at the object
-     * level, so the lock targets the object URL (without {@code /source/main}).
+     * <b>Important:</b> Lock/write/unlock must happen within a
+     * <b>stateful session</b> (HTTP header {@code X-sap-adt-sessiontype: stateful}).
+     * Without stateful sessions, the lock handle is not recognized on
+     * subsequent requests and the server returns HTTP 423.
      * </p>
      *
      * @param sourceUrl the full source URL
-     * @return the URL to use for LOCK/UNLOCK operations
+     * @return the object URL to use for LOCK/UNLOCK operations
      */
     public static String toLockUrl(String sourceUrl) {
-        if (sourceUrl == null) return sourceUrl;
-
-        // For programs: lock the INCLUDE (at /programs/includes/{name})
-        // not the program (at /programs/programs/{name})
-        String objectUrl = toObjectUrl(sourceUrl);
-        if (objectUrl != null && objectUrl.contains("/programs/programs/")) {
-            return objectUrl.replace("/programs/programs/", "/programs/includes/");
-        }
-
-        return objectUrl; // Classes/interfaces: lock the object URL
+        return toObjectUrl(sourceUrl);
     }
 
     /**
