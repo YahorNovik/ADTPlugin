@@ -108,6 +108,9 @@ public class SetSourceTool extends AbstractSapTool {
         // while the PUT targets the SOURCE URL -- matching SAP ADT protocol.
         String objectUrl = toObjectUrl(sourceUrl);
 
+        System.err.println("SetSourceTool: LOCK on objectUrl=" + objectUrl);
+        System.err.println("SetSourceTool: PUT will target sourceUrl=" + sourceUrl);
+
         // Step 1: Lock the object
         String lockPath = objectUrl + "?_action=LOCK&accessMode=MODIFY";
         HttpResponse<String> lockResp = client.post(lockPath, "",
@@ -115,6 +118,7 @@ public class SetSourceTool extends AbstractSapTool {
                 "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result;q=0.8, "
                 + "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result2;q=0.9");
         String lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
+        System.err.println("SetSourceTool: lockHandle=" + lockHandle);
 
         if (lockHandle == null || lockHandle.isEmpty()) {
             return ToolResult.error(null,

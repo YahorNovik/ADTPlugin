@@ -46,10 +46,10 @@ public class ContextBuilder {
         sb.append("1. **Validate first**: call sap_syntax_check with the `content` parameter to check code WITHOUT saving.\n");
         sb.append("2. **Fix errors**: iterate with sap_syntax_check until zero errors.\n");
         sb.append("3. **Write**: use sap_set_source or sap_write_and_check (diff preview shown to user; locking is automatic).\n");
-        sb.append("4. **Activate**: call sap_activate. Fix errors if activation fails.\n");
-        sb.append("5. **ATC check**: run sap_atc_run and resolve critical findings.\n\n");
+        sb.append("4. **Activate**: call sap_activate. Fix errors if activation fails.\n\n");
         sb.append("IMPORTANT: Always validate syntax BEFORE writing. The system enforces this — ");
-        sb.append("writes with syntax errors are rejected.\n\n");
+        sb.append("writes with syntax errors are rejected.\n");
+        sb.append("Only run sap_atc_run when the user explicitly requests ATC or quality checks.\n\n");
 
         // -- Output style instruction --
         sb.append("## Response Style\n\n");

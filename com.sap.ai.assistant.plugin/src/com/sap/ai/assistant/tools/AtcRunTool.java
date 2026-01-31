@@ -72,33 +72,50 @@ public class AtcRunTool extends AbstractSapTool {
         }
         int maxResults = optInt(arguments, "maxResults", 100);
 
-        // Step 1: Create the ATC run
+        // Step 1: Create a worklist for the check variant
+        // POST /sap/bc/adt/atc/worklists?checkVariant=DEFAULT returns the worklist ID
+        String worklistId;
+        try {
+            HttpResponse<String> wlResponse = client.post(
+                    "/sap/bc/adt/atc/worklists?checkVariant=" + urlEncode(variant),
+                    "", "application/xml", "text/plain");
+            worklistId = wlResponse.body() != null ? wlResponse.body().trim() : "";
+        } catch (Exception e) {
+            // Some systems return the worklist ID differently; try a fallback
+            worklistId = variant;
+        }
+
+        if (worklistId.isEmpty()) {
+            worklistId = variant;
+        }
+
+        // Step 2: Create the ATC run with correct XML format
+        // Uses <objectSets> with <adtcore:objectReferences> per SAP ADT API spec
         String runXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                + "<atc:run xmlns:atc=\"http://www.sap.com/adt/atc\" maximumVerdicts=\"" + maxResults + "\">"
-                + "<atc:objects>"
-                + "<atc:objectSet kind=\"inclusive\">"
-                + "<atc:object uri=\"" + escapeXml(objectUrl) + "\" type=\"\" name=\"\"/>"
-                + "</atc:objectSet>"
-                + "</atc:objects>"
-                + "<atc:checkVariant name=\"" + escapeXml(variant) + "\"/>"
+                + "<atc:run maximumVerdicts=\"" + maxResults
+                + "\" xmlns:atc=\"http://www.sap.com/adt/atc\">"
+                + "<objectSets xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+                + "<objectSet kind=\"inclusive\">"
+                + "<adtcore:objectReferences>"
+                + "<adtcore:objectReference adtcore:uri=\"" + escapeXml(objectUrl) + "\"/>"
+                + "</adtcore:objectReferences>"
+                + "</objectSet>"
+                + "</objectSets>"
                 + "</atc:run>";
 
         HttpResponse<String> runResponse = client.post(
-                "/sap/bc/adt/atc/runs?worklistId=worklistId",
+                "/sap/bc/adt/atc/runs?worklistId=" + urlEncode(worklistId),
                 runXml,
                 "application/xml",
                 "application/xml");
 
-        // Extract the worklist ID from the run response
-        // The response typically contains a Location header or the worklist ID in the body
-        String worklistId = extractWorklistId(runResponse);
-
-        if (worklistId == null || worklistId.isEmpty()) {
-            return ToolResult.error(null,
-                    "Failed to extract worklist ID from ATC run response: " + runResponse.body());
+        // Extract the worklist ID from the run response (may differ from the one we created)
+        String runWorklistId = extractWorklistId(runResponse);
+        if (runWorklistId != null && !runWorklistId.isEmpty()) {
+            worklistId = runWorklistId;
         }
 
-        // Step 2: Fetch the worklist
+        // Step 3: Fetch the worklist results
         HttpResponse<String> worklistResponse = client.get(
                 "/sap/bc/adt/atc/worklists/" + urlEncode(worklistId),
                 "application/atc.worklist.v1+xml");

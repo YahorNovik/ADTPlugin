@@ -330,12 +330,16 @@ public class WriteAndCheckTool extends AbstractSapTool {
         // while the PUT targets the SOURCE URL -- matching SAP ADT protocol.
         String objectUrl = toObjectUrl(sourceUrl);
 
+        System.err.println("WriteAndCheckTool: LOCK on objectUrl=" + objectUrl);
+        System.err.println("WriteAndCheckTool: PUT will target sourceUrl=" + sourceUrl);
+
         String lockPath = objectUrl + "?_action=LOCK&accessMode=MODIFY";
         HttpResponse<String> lockResp = client.post(lockPath, "",
                 "application/*",
                 "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result;q=0.8, "
                 + "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result2;q=0.9");
         String lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
+        System.err.println("WriteAndCheckTool: lockHandle=" + lockHandle);
 
         if (lockHandle == null || lockHandle.isEmpty()) {
             throw new java.io.IOException(
