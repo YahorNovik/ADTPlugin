@@ -65,9 +65,10 @@ public class LockTool extends AbstractSapTool {
 
         String path = objectUrl + "?_action=LOCK&accessMode=" + urlEncode(accessMode);
 
-        HttpResponse<String> response = client.post(path, "",
+        HttpResponse<String> response = client.postWithHeaders(path, "",
                 "application/*",
-                "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
+                "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result",
+                STATEFUL_HEADERS);
         String lockHandle = AdtXmlParser.extractLockHandle(response.body());
 
         if (lockHandle == null || lockHandle.isEmpty()) {

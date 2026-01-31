@@ -108,12 +108,13 @@ public class SetSourceTool extends AbstractSapTool {
         System.err.println("SetSourceTool: LOCK on lockUrl=" + lockUrl);
         System.err.println("SetSourceTool: PUT will target sourceUrl=" + sourceUrl);
 
-        // Step 1: Lock
+        // Step 1: Lock (stateful session required)
         String lockPath = lockUrl + "?_action=LOCK&accessMode=MODIFY";
-        HttpResponse<String> lockResp = client.post(lockPath, "",
+        HttpResponse<String> lockResp = client.postWithHeaders(lockPath, "",
                 "application/*",
                 "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result;q=0.8, "
-                + "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result2;q=0.9");
+                + "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result2;q=0.9",
+                STATEFUL_HEADERS);
         String lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
         System.err.println("SetSourceTool: lockHandle=" + lockHandle);
 
@@ -129,7 +130,8 @@ public class SetSourceTool extends AbstractSapTool {
                 writePath = writePath + "&corrNr=" + urlEncode(transport);
             }
 
-            HttpResponse<String> response = client.put(writePath, source, "text/plain; charset=utf-8");
+            HttpResponse<String> response = client.putWithHeaders(writePath, source,
+                    "text/plain; charset=utf-8", STATEFUL_HEADERS);
 
             JsonObject output = new JsonObject();
             output.addProperty("status", "success");
@@ -143,7 +145,8 @@ public class SetSourceTool extends AbstractSapTool {
     private void safeUnlock(String lockUrl, String lockHandle) {
         try {
             String unlockPath = lockUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
-            client.post(unlockPath, "", "application/*", "application/*");
+            client.postWithHeaders(unlockPath, "", "application/*", "application/*",
+                    STATEFUL_HEADERS);
         } catch (Exception e) {
             // Ignore -- lock may already be released or handle invalid
         }

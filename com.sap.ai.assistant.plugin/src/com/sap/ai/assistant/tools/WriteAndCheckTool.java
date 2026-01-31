@@ -332,10 +332,11 @@ public class WriteAndCheckTool extends AbstractSapTool {
         System.err.println("WriteAndCheckTool: PUT will target sourceUrl=" + sourceUrl);
 
         String lockPath = lockUrl + "?_action=LOCK&accessMode=MODIFY";
-        HttpResponse<String> lockResp = client.post(lockPath, "",
+        HttpResponse<String> lockResp = client.postWithHeaders(lockPath, "",
                 "application/*",
                 "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result;q=0.8, "
-                + "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result2;q=0.9");
+                + "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result2;q=0.9",
+                STATEFUL_HEADERS);
         String lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
         System.err.println("WriteAndCheckTool: lockHandle=" + lockHandle);
 
@@ -349,7 +350,8 @@ public class WriteAndCheckTool extends AbstractSapTool {
             if (transport != null && !transport.isEmpty()) {
                 writePath = writePath + "&corrNr=" + urlEncode(transport);
             }
-            client.put(writePath, source, "text/plain; charset=utf-8");
+            client.putWithHeaders(writePath, source, "text/plain; charset=utf-8",
+                    STATEFUL_HEADERS);
         } finally {
             safeUnlock(lockUrl, lockHandle);
         }
@@ -358,7 +360,8 @@ public class WriteAndCheckTool extends AbstractSapTool {
     private void safeUnlock(String lockUrl, String lockHandle) {
         try {
             String unlockPath = lockUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
-            client.post(unlockPath, "", "application/*", "application/*");
+            client.postWithHeaders(unlockPath, "", "application/*", "application/*",
+                    STATEFUL_HEADERS);
         } catch (Exception e) {
             // Ignore -- lock may already be released or handle invalid
         }

@@ -2,6 +2,7 @@ package com.sap.ai.assistant.tools;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import com.google.gson.JsonObject;
 import com.sap.ai.assistant.sap.AdtRestClient;
@@ -24,6 +25,14 @@ public abstract class AbstractSapTool implements SapTool {
     protected AbstractSapTool(AdtRestClient client) {
         this.client = client;
     }
+
+    /**
+     * Headers that enable a stateful ADT session. Required for lock, write,
+     * and unlock operations so that the lock handle is recognised across
+     * requests within the same HTTP session.
+     */
+    protected static final Map<String, String> STATEFUL_HEADERS =
+            Map.of(AdtRestClient.SESSION_TYPE_HEADER, "stateful");
 
     // ------------------------------------------------------------------
     // Helper methods
