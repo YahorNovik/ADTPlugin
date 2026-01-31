@@ -7,8 +7,21 @@ import java.util.List;
 /**
  * Maintains the state of a chat conversation, including the ordered list of
  * messages and an optional system prompt.
+ * <p>
+ * Includes a sliding-window mechanism ({@link #trimMessages(int)}) to keep
+ * token usage manageable during multi-round agentic interactions. When the
+ * number of messages exceeds the limit, older middle messages are dropped
+ * while preserving the first user message (original intent) and the most
+ * recent messages (immediate context).
+ * </p>
  */
 public class ChatConversation {
+
+    /**
+     * Default maximum number of messages to retain in the conversation.
+     * This keeps roughly the last 5 user/assistant/tool exchanges.
+     */
+    public static final int DEFAULT_MAX_MESSAGES = 12;
 
     private final List<ChatMessage> messages;
     private String systemPrompt;
@@ -59,6 +72,59 @@ public class ChatConversation {
      */
     public void clear() {
         messages.clear();
+    }
+
+    /**
+     * Trims the conversation to at most {@code maxMessages} entries by removing
+     * older messages from the middle, preserving the first user message and
+     * the most recent messages.
+     * <p>
+     * This implements a sliding window that keeps the original user intent
+     * (first message) visible to the LLM while retaining the most recent
+     * context for the current tool-call round.
+     * </p>
+     * <p>
+     * When messages are dropped, a synthetic user message is inserted after
+     * the first message indicating that earlier exchanges were omitted.
+     * </p>
+     *
+     * @param maxMessages the maximum number of messages to retain (minimum 4)
+     */
+    public void trimMessages(int maxMessages) {
+        if (maxMessages < 4) {
+            maxMessages = 4;
+        }
+        if (messages.size() <= maxMessages) {
+            return;
+        }
+
+        // Keep: [0] = first user message, then the last (maxMessages - 2) messages,
+        // plus a synthetic "trimmed" marker at position [1].
+        ChatMessage firstMessage = messages.get(0);
+
+        // How many recent messages to keep (leaving room for first + marker)
+        int keepRecent = maxMessages - 2;
+        int startOfRecent = messages.size() - keepRecent;
+
+        List<ChatMessage> recent = new ArrayList<>(messages.subList(startOfRecent, messages.size()));
+
+        int droppedCount = startOfRecent - 1; // messages between first and the kept tail
+
+        messages.clear();
+        messages.add(firstMessage);
+        messages.add(ChatMessage.user(
+                "[System note: " + droppedCount + " earlier messages were omitted to save context space. "
+                + "The original request and recent messages are preserved.]"));
+        messages.addAll(recent);
+    }
+
+    /**
+     * Trims the conversation using the default maximum message count.
+     *
+     * @see #trimMessages(int)
+     */
+    public void trimMessages() {
+        trimMessages(DEFAULT_MAX_MESSAGES);
     }
 
     // -- Getters / Setters -------------------------------------------------------

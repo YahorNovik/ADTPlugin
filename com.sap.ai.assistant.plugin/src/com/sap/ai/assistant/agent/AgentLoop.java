@@ -3,6 +3,8 @@ package com.sap.ai.assistant.agent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.google.gson.JsonObject;
 import com.sap.ai.assistant.llm.AbstractLlmProvider;
@@ -11,6 +13,7 @@ import com.sap.ai.assistant.llm.LlmProvider;
 import com.sap.ai.assistant.model.ChatConversation;
 import com.sap.ai.assistant.model.ChatMessage;
 import com.sap.ai.assistant.model.DiffRequest;
+import com.sap.ai.assistant.model.LlmUsage;
 import com.sap.ai.assistant.model.RequestLogEntry;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolDefinition;
@@ -43,6 +46,16 @@ public class AgentLoop {
      * This prevents runaway loops where the LLM keeps requesting tool calls indefinitely.
      */
     public static final int MAX_TOOL_ROUNDS = 20;
+
+    /**
+     * Maximum cumulative input tokens across all rounds of a single agent run.
+     * When exceeded the loop stops and returns a budget-exceeded message to the user.
+     */
+    public static final int MAX_INPUT_TOKENS = 50_000;
+
+    /** Pattern to extract the human-readable message from SAP ADT XML exceptions. */
+    private static final Pattern SAP_XML_MESSAGE_PATTERN =
+            Pattern.compile("<message[^>]*>([^<]+)</message>");
 
     private final LlmProvider llmProvider;
     private final SapToolRegistry toolRegistry;
@@ -107,12 +120,17 @@ public class AgentLoop {
                     ? toolRegistry.getAllDefinitions()
                     : Collections.emptyList();
 
+            int cumulativeInputTokens = 0;
+
             for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
                 // Check for thread interruption (supports Eclipse Job cancellation)
                 if (Thread.currentThread().isInterrupted()) {
                     callback.onError(new InterruptedException("Agent loop was cancelled"));
                     return;
                 }
+
+                // Trim conversation to prevent token snowball on long interactions
+                conversation.trimMessages();
 
                 // 1. Send conversation to LLM
                 ChatMessage response;
@@ -130,6 +148,12 @@ public class AgentLoop {
                             null, e.getMessage(), null, conversation);
                     callback.onError(e);
                     return;
+                }
+
+                // Track cumulative input tokens for budget enforcement
+                LlmUsage usage = response.getUsage();
+                if (usage != null) {
+                    cumulativeInputTokens += usage.getInputTokens();
                 }
 
                 // 2. If no tool calls, this is the final response
@@ -166,6 +190,12 @@ public class AgentLoop {
                     callback.onToolCallStart(toolCall);
 
                     ToolResult result = executeTool(toolCall, callback);
+
+                    // Compact verbose SAP XML error messages before they enter the conversation
+                    if (result.isError()) {
+                        result = compactErrorResult(result);
+                    }
+
                     results.add(result);
 
                     // Capture tool I/O for the dev log
@@ -186,6 +216,17 @@ public class AgentLoop {
                 // 5. Build tool results message and add to conversation
                 ChatMessage toolResultsMessage = ChatMessage.toolResults(results);
                 conversation.addAssistantMessage(toolResultsMessage);
+
+                // 6. Check token budget
+                if (cumulativeInputTokens > MAX_INPUT_TOKENS) {
+                    System.err.println("AgentLoop: token budget exceeded ("
+                            + cumulativeInputTokens + " > " + MAX_INPUT_TOKENS + "), stopping.");
+                    callback.onError(new Exception(
+                            "Token budget exceeded (" + cumulativeInputTokens + " input tokens used). "
+                            + "The conversation was getting too long. Please start a new chat "
+                            + "or simplify your request."));
+                    return;
+                }
             }
 
             // Maximum rounds exceeded
@@ -432,6 +473,52 @@ public class AgentLoop {
             System.err.println("AgentLoop: pre-write syntax validation failed: " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Compacts a verbose error result by extracting the human-readable message
+     * from SAP ADT XML exception bodies. This reduces the tokens consumed
+     * when error messages re-enter the conversation on subsequent rounds.
+     */
+    private ToolResult compactErrorResult(ToolResult result) {
+        String content = result.getContent();
+        if (content == null || content.length() < 200) {
+            return result; // Already short enough
+        }
+
+        // Try to extract SAP XML message
+        String sapMessage = extractSapMessage(content);
+        if (sapMessage != null) {
+            // Preserve the HTTP method/status prefix if present
+            // e.g. "Tool execution failed: IOException - HTTP 400 PUT http://... -- <xml>"
+            int xmlStart = content.indexOf("<?xml");
+            if (xmlStart < 0) xmlStart = content.indexOf("<exc:");
+            String prefix = (xmlStart > 0) ? content.substring(0, xmlStart).trim() : "";
+            String compact = prefix.isEmpty()
+                    ? sapMessage
+                    : prefix + " -- " + sapMessage;
+            return ToolResult.error(result.getToolCallId(), compact);
+        }
+
+        // No SAP XML found; just truncate if very long
+        if (content.length() > 500) {
+            return ToolResult.error(result.getToolCallId(),
+                    content.substring(0, 500) + "... (truncated)");
+        }
+        return result;
+    }
+
+    /**
+     * Extracts the human-readable message from a SAP ADT XML exception body.
+     * Returns {@code null} if no SAP message element is found.
+     */
+    private static String extractSapMessage(String text) {
+        if (text == null) return null;
+        Matcher m = SAP_XML_MESSAGE_PATTERN.matcher(text);
+        if (m.find()) {
+            return m.group(1).trim();
+        }
+        return null;
     }
 
     private long getRequestDurationMs(long fallbackStartMs) {

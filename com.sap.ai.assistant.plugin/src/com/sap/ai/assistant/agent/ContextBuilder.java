@@ -23,11 +23,15 @@ public class ContextBuilder {
 
     /**
      * Builds the full system prompt for the agent, including the base instructions,
-     * available tool descriptions, the code-change workflow, and (when available)
-     * the current ADT editor context.
+     * the code-change workflow, and (when available) the current ADT editor context.
+     * <p>
+     * Tool descriptions are NOT included in the system prompt because they are
+     * already provided via the API's {@code tools} parameter. This avoids
+     * duplicating ~1000 tokens of tool descriptions on every request.
+     * </p>
      *
      * @param context  the current ADT context (may be {@code null})
-     * @param registry the tool registry used to list available tools
+     * @param registry the tool registry (currently unused; kept for API compat)
      * @return the assembled system prompt
      */
     public static String buildSystemPrompt(AdtContext context, SapToolRegistry registry) {
@@ -37,40 +41,27 @@ public class ContextBuilder {
         sb.append("You are an expert SAP ABAP assistant with full read/write access ")
           .append("to a live SAP system via ADT REST APIs.\n\n");
 
-        // -- Available tools --
-        sb.append("## Available Tools\n\n");
-        if (registry != null) {
-            List<ToolDefinition> definitions = registry.getAllDefinitions();
-            for (ToolDefinition def : definitions) {
-                sb.append("- **").append(def.getName()).append("**: ")
-                  .append(def.getDescription()).append("\n");
-            }
-        }
-        sb.append("\n");
+        // -- Concise code-change workflow --
+        sb.append("## Workflow\n\n");
+        sb.append("1. **Validate first**: call sap_syntax_check with the `content` parameter to check code WITHOUT saving.\n");
+        sb.append("2. **Fix errors**: iterate with sap_syntax_check until zero errors.\n");
+        sb.append("3. **Write**: use sap_set_source or sap_write_and_check (diff preview shown to user; locking is automatic).\n");
+        sb.append("4. **Activate**: call sap_activate. Fix errors if activation fails.\n");
+        sb.append("5. **ATC check**: run sap_atc_run and resolve critical findings.\n\n");
+        sb.append("IMPORTANT: Always validate syntax BEFORE writing. The system enforces this — ");
+        sb.append("writes with syntax errors are rejected.\n\n");
 
-        // -- Code-change workflow --
-        sb.append("## Workflow for Code Changes\n\n");
-        sb.append("When modifying ABAP source code, always follow this sequence:\n\n");
-        sb.append("1. **Lock** the object before making changes (sap_lock_object).\n");
-        sb.append("2. **Write** the new source code (sap_set_source or sap_write_and_check).\n");
-        sb.append("3. **Syntax checks run automatically** after every write. If errors are ")
-          .append("reported, you MUST fix them and write the corrected source before proceeding.\n");
-        sb.append("4. **Activate** the object (sap_activate_object). If activation fails, ")
-          .append("fix the reported errors and retry.\n");
-        sb.append("5. **ATC check** \u2014 run the ABAP Test Cockpit (sap_atc_run) and resolve ")
-          .append("any critical findings.\n");
-        sb.append("6. **Unlock** the object when finished (sap_unlock_object).\n\n");
-        sb.append("IMPORTANT: Syntax checking is automatic. After every write operation, the system ")
-          .append("will check for syntax errors. If errors are found, you will receive them and MUST ")
-          .append("fix all errors before continuing. Do NOT skip syntax errors.\n\n");
-        sb.append("Always ensure the object is unlocked after changes, even if an error occurs.\n\n");
+        // -- Output style instruction --
+        sb.append("## Response Style\n\n");
+        sb.append("Do NOT include full source code in your text responses. ");
+        sb.append("Use tool calls (sap_syntax_check, sap_set_source, sap_write_and_check) to validate and write code. ");
+        sb.append("Only show short code snippets (under 10 lines) when explaining specific changes or errors. ");
+        sb.append("This keeps responses concise and avoids duplicating code that is already in the tool call.\n\n");
 
-        // -- SAP Documentation tools --
+        // -- SAP Documentation tools (only if MCP tools might be registered) --
         sb.append("## SAP Documentation\n\n");
-        sb.append("You have access to MCP documentation tools (prefixed with mcp_) that can search ");
-        sb.append("official SAP documentation, ABAP keyword reference, SAP Help Portal, and SAP Community. ");
-        sb.append("Use these tools when you need reference information about ABAP syntax, CDS annotations, ");
-        sb.append("RAP patterns, S/4HANA changes, or any SAP development topic.\n\n");
+        sb.append("MCP documentation tools (prefixed with mcp_) can search SAP documentation, ");
+        sb.append("ABAP keyword reference, and SAP Help Portal.\n\n");
 
         // -- ADT context --
         if (context != null) {
