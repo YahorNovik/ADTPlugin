@@ -124,21 +124,30 @@ public abstract class AbstractSapTool implements SapTool {
     /**
      * Determine the correct URL for lock/unlock operations.
      * <p>
-     * For <b>programs</b>, SAP locks at the INCLUDE level, so the lock
-     * must target the <b>source URL</b> (with {@code /source/main}).
+     * For <b>programs</b>, SAP locks at the INCLUDE level. The INCLUDE
+     * resource lives at {@code /sap/bc/adt/programs/includes/{name}},
+     * while the program itself is at {@code /sap/bc/adt/programs/programs/{name}}.
+     * The lock must target the include object URL.
+     * </p>
+     * <p>
      * For <b>classes</b> and <b>interfaces</b>, SAP locks at the object
-     * level, so the lock must target the <b>object URL</b> (without
-     * {@code /source/main}).
+     * level, so the lock targets the object URL (without {@code /source/main}).
      * </p>
      *
      * @param sourceUrl the full source URL
      * @return the URL to use for LOCK/UNLOCK operations
      */
     public static String toLockUrl(String sourceUrl) {
-        if (sourceUrl != null && sourceUrl.contains("/programs/programs/")) {
-            return sourceUrl; // Programs: lock the INCLUDE (source URL)
+        if (sourceUrl == null) return sourceUrl;
+
+        // For programs: lock the INCLUDE (at /programs/includes/{name})
+        // not the program (at /programs/programs/{name})
+        String objectUrl = toObjectUrl(sourceUrl);
+        if (objectUrl != null && objectUrl.contains("/programs/programs/")) {
+            return objectUrl.replace("/programs/programs/", "/programs/includes/");
         }
-        return toObjectUrl(sourceUrl); // Classes/interfaces: lock the object URL
+
+        return objectUrl; // Classes/interfaces: lock the object URL
     }
 
     /**
