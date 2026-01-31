@@ -1,6 +1,7 @@
 package com.sap.ai.assistant.tools;
 
 import java.net.http.HttpResponse;
+import java.util.Base64;
 import java.util.regex.Pattern;
 
 import com.google.gson.JsonArray;
@@ -21,6 +22,9 @@ import com.sap.ai.assistant.sap.AdtXmlParser;
 public class SyntaxCheckTool extends AbstractSapTool {
 
     public static final String NAME = "sap_syntax_check";
+
+    /** The correct ADT endpoint for check runs (syntax check). */
+    private static final String CHECKRUN_ENDPOINT = "/sap/bc/adt/checkruns?reporters=abapCheckRun";
 
     private final ScratchObjectManager scratchManager;
 
@@ -85,11 +89,11 @@ public class SyntaxCheckTool extends AbstractSapTool {
         String mainUrl = optString(arguments, "mainUrl");
         String mainProgram = optString(arguments, "mainProgram");
 
-        String xmlBody = buildSyntaxCheckXml(url, content, mainUrl, mainProgram);
+        String xmlBody = buildCheckRunXml(url, content, mainUrl, mainProgram);
 
         try {
             HttpResponse<String> response = client.post(
-                    "/sap/bc/adt/abapsource/syntaxcheck",
+                    CHECKRUN_ENDPOINT,
                     xmlBody,
                     "application/*",
                     "application/*");
@@ -111,11 +115,11 @@ public class SyntaxCheckTool extends AbstractSapTool {
                         String adjustedContent = content.replaceAll(
                                 "(?i)" + Pattern.quote(originalName), scratchName);
 
-                        String retryXml = buildSyntaxCheckXml(
+                        String retryXml = buildCheckRunXml(
                                 scratchUrl, adjustedContent, mainUrl, mainProgram);
 
                         HttpResponse<String> retryResp = client.post(
-                                "/sap/bc/adt/abapsource/syntaxcheck",
+                                CHECKRUN_ENDPOINT,
                                 retryXml,
                                 "application/*",
                                 "application/*");
@@ -133,27 +137,44 @@ public class SyntaxCheckTool extends AbstractSapTool {
     // ------------------------------------------------------------------
 
     /**
-     * Build the XML body for the syntax check request.
+     * Build the XML body for the check run request, following the format
+     * used by the abap-adt-api reference implementation.
+     * <p>
+     * When {@code content} is provided, the source code is Base64-encoded
+     * and placed inside {@code <chkrun:artifacts>/<chkrun:artifact>/<chkrun:content>}.
+     * When {@code content} is null/empty, only the object URI is sent and
+     * SAP checks the saved (active) version.
+     * </p>
      */
-    private String buildSyntaxCheckXml(String url, String content,
-                                        String mainUrl, String mainProgram) {
+    private String buildCheckRunXml(String url, String content,
+                                     String mainUrl, String mainProgram) {
+        // The source URL on the checkObject; add ?context=mainProgram if specified
+        String sourceUri = url;
+        if (mainProgram != null && !mainProgram.isEmpty()) {
+            sourceUri = url + "?context=" + urlEncode(mainProgram);
+        }
+
+        // The include URL (for the artifact); defaults to url itself
+        String inclUrl = (mainUrl != null && !mainUrl.isEmpty()) ? mainUrl : url;
+
         StringBuilder xml = new StringBuilder();
         xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         xml.append("<chkrun:checkObjectList xmlns:chkrun=\"http://www.sap.com/adt/checkrun\" ");
         xml.append("xmlns:adtcore=\"http://www.sap.com/adt/core\">");
-        xml.append("<chkrun:checkObject adtcore:uri=\"").append(escapeXml(url)).append("\"");
-
-        if (mainUrl != null && !mainUrl.isEmpty()) {
-            xml.append(" chkrun:mainUri=\"").append(escapeXml(mainUrl)).append("\"");
-        }
-        if (mainProgram != null && !mainProgram.isEmpty()) {
-            xml.append(" chkrun:mainProgram=\"").append(escapeXml(mainProgram)).append("\"");
-        }
-
-        xml.append(">");
+        xml.append("<chkrun:checkObject adtcore:uri=\"").append(escapeXml(sourceUri)).append("\"");
+        xml.append(" chkrun:version=\"active\">");
 
         if (content != null && !content.isEmpty()) {
-            xml.append("<chkrun:source><![CDATA[").append(content).append("]]></chkrun:source>");
+            // Base64-encode the content as per the reference implementation
+            String b64 = Base64.getEncoder().encodeToString(
+                    content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+            xml.append("<chkrun:artifacts>");
+            xml.append("<chkrun:artifact chkrun:contentType=\"text/plain; charset=utf-8\" ");
+            xml.append("chkrun:uri=\"").append(escapeXml(inclUrl)).append("\">");
+            xml.append("<chkrun:content>").append(b64).append("</chkrun:content>");
+            xml.append("</chkrun:artifact>");
+            xml.append("</chkrun:artifacts>");
         }
 
         xml.append("</chkrun:checkObject>");

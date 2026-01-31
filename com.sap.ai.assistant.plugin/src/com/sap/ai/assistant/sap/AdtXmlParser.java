@@ -31,9 +31,9 @@ public final class AdtXmlParser {
     // Common ADT XML namespaces
     private static final String NS_ATOM = "http://www.w3.org/2005/Atom";
     private static final String NS_ADT = "http://www.sap.com/adt/api";
-    private static final String NS_ADT_CORE = "http://www.sap.com/adt/api/core";
-    private static final String NS_ATC = "http://www.sap.com/adt/api/atc";
-    private static final String NS_CHKRUN = "http://www.sap.com/adt/api/checkrun";
+    private static final String NS_ADT_CORE = "http://www.sap.com/adt/core";
+    private static final String NS_ATC = "http://www.sap.com/adt/atc";
+    private static final String NS_CHKRUN = "http://www.sap.com/adt/checkrun";
 
     private AdtXmlParser() {
         // utility class -- no instances
@@ -330,7 +330,16 @@ public final class AdtXmlParser {
     // ---------------------------------------------------------------
 
     /**
-     * Parse a syntax check response XML.
+     * Parse a check-run (syntax check) response XML.
+     *
+     * <p>The response from {@code POST /sap/bc/adt/checkruns?reporters=abapCheckRun}
+     * uses {@code <chkrun:checkMessage>} elements inside
+     * {@code <chkrun:checkMessageList>}. Each message has attributes:
+     * <ul>
+     *   <li>{@code chkrun:uri} — contains {@code #start=line,offset} fragment</li>
+     *   <li>{@code chkrun:type} — severity (e.g. "E", "W", "I")</li>
+     *   <li>{@code chkrun:shortText} — the message text</li>
+     * </ul>
      *
      * @param xml raw XML string
      * @return JsonArray of findings, each with: uri, line, offset,
@@ -345,8 +354,56 @@ public final class AdtXmlParser {
         try {
             Document doc = parseDocument(xml);
 
-            // Syntax check results use <chkrun:message> or similar elements
-            NodeList messages = doc.getElementsByTagNameNS(NS_CHKRUN, "message");
+            // Primary format: <chkrun:checkMessage> from /sap/bc/adt/checkruns
+            NodeList messages = doc.getElementsByTagNameNS(NS_CHKRUN, "checkMessage");
+            if (messages.getLength() == 0) {
+                messages = doc.getElementsByTagName("chkrun:checkMessage");
+            }
+
+            if (messages.getLength() > 0) {
+                for (int i = 0; i < messages.getLength(); i++) {
+                    Element msg = (Element) messages.item(i);
+                    JsonObject finding = new JsonObject();
+
+                    // URI contains #start=line,offset
+                    String uri = attr(msg, "chkrun:uri", attr(msg, "uri", ""));
+                    finding.addProperty("uri", uri);
+
+                    // Parse line and offset from URI fragment: #start=line,offset
+                    String line = "";
+                    String offset = "";
+                    int hashIdx = uri.indexOf("#start=");
+                    if (hashIdx >= 0) {
+                        String fragment = uri.substring(hashIdx + 7); // after "#start="
+                        String[] parts = fragment.split(",");
+                        if (parts.length >= 1) line = parts[0];
+                        if (parts.length >= 2) offset = parts[1];
+                    }
+                    finding.addProperty("line", line);
+                    finding.addProperty("offset", offset);
+
+                    // Severity: chkrun:type (E, W, I)
+                    String type = attr(msg, "chkrun:type", attr(msg, "type", ""));
+                    String severity;
+                    switch (type.toUpperCase()) {
+                        case "E": severity = "error"; break;
+                        case "W": severity = "warning"; break;
+                        case "I": severity = "info"; break;
+                        default: severity = type;
+                    }
+                    finding.addProperty("severity", severity);
+
+                    // Text: chkrun:shortText
+                    finding.addProperty("text", attr(msg, "chkrun:shortText",
+                            attr(msg, "shortText", textContentOrChild(msg, "shortText", ""))));
+
+                    results.add(finding);
+                }
+                return results;
+            }
+
+            // Legacy format: <chkrun:message> or <message> elements
+            messages = doc.getElementsByTagNameNS(NS_CHKRUN, "message");
             if (messages.getLength() == 0) {
                 messages = doc.getElementsByTagName("chkrun:message");
             }

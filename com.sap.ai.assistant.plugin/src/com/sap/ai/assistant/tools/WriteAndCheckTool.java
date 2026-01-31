@@ -256,12 +256,13 @@ public class WriteAndCheckTool extends AbstractSapTool {
             syntaxXml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
             syntaxXml.append("<chkrun:checkObjectList xmlns:chkrun=\"http://www.sap.com/adt/checkrun\" ");
             syntaxXml.append("xmlns:adtcore=\"http://www.sap.com/adt/core\">");
-            syntaxXml.append("<chkrun:checkObject adtcore:uri=\"").append(escapeXml(sourceUrl)).append("\">");
+            syntaxXml.append("<chkrun:checkObject adtcore:uri=\"").append(escapeXml(sourceUrl)).append("\"");
+            syntaxXml.append(" chkrun:version=\"active\">");
             syntaxXml.append("</chkrun:checkObject>");
             syntaxXml.append("</chkrun:checkObjectList>");
 
             HttpResponse<String> syntaxResp = client.post(
-                    "/sap/bc/adt/abapsource/syntaxcheck",
+                    "/sap/bc/adt/checkruns?reporters=abapCheckRun",
                     syntaxXml.toString(),
                     "application/*",
                     "application/*");
