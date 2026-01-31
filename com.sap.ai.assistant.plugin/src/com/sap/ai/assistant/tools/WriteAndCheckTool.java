@@ -297,14 +297,35 @@ public class WriteAndCheckTool extends AbstractSapTool {
 
     /**
      * Lock, write, and unlock with retry on HTTP 423 (invalid lock handle).
+     * Retries up to 3 times with a 500ms delay between attempts to handle
+     * race conditions (e.g. after object creation).
      */
     private void lockWriteUnlock(String sourceUrl, String source,
                                   String transport) throws Exception {
-        lockWriteUnlockAttempt(sourceUrl, source, transport, 1);
+        final int maxAttempts = 3;
+        Exception lastError = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                lockWriteUnlockAttempt(sourceUrl, source, transport);
+                return; // success
+            } catch (java.io.IOException e) {
+                lastError = e;
+                String msg = e.getMessage() != null ? e.getMessage() : "";
+                if (msg.contains("HTTP 423") && attempt < maxAttempts) {
+                    System.err.println("WriteAndCheckTool: lock handle rejected (423), "
+                            + "retrying after delay (attempt " + attempt + "/" + maxAttempts + ")...");
+                    Thread.sleep(500);
+                    continue;
+                }
+                throw e;
+            }
+        }
+        throw lastError;
     }
 
     private void lockWriteUnlockAttempt(String sourceUrl, String source,
-                                         String transport, int attempt) throws Exception {
+                                         String transport) throws Exception {
         String lockPath = sourceUrl + "?_action=LOCK&accessMode=MODIFY";
         HttpResponse<String> lockResp = client.post(lockPath, "",
                 "application/*",
@@ -323,15 +344,6 @@ public class WriteAndCheckTool extends AbstractSapTool {
                 writePath = writePath + "&corrNr=" + urlEncode(transport);
             }
             client.put(writePath, source, "text/plain; charset=utf-8");
-        } catch (java.io.IOException e) {
-            String msg = e.getMessage() != null ? e.getMessage() : "";
-            if (msg.contains("HTTP 423") && attempt < 2) {
-                System.err.println("WriteAndCheckTool: lock handle rejected (423), retrying...");
-                safeUnlock(sourceUrl, lockHandle);
-                lockWriteUnlockAttempt(sourceUrl, source, transport, attempt + 1);
-                return;
-            }
-            throw e;
         } finally {
             safeUnlock(sourceUrl, lockHandle);
         }

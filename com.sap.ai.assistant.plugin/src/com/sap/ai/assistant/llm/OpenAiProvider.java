@@ -10,6 +10,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sap.ai.assistant.model.ChatMessage;
 import com.sap.ai.assistant.model.LlmProviderConfig;
+import com.sap.ai.assistant.model.LlmUsage;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
@@ -229,7 +230,14 @@ public class OpenAiProvider extends AbstractLlmProvider {
                 }
             }
 
-            return new ChatMessage(ChatMessage.Role.ASSISTANT, textContent, toolCalls, null);
+            ChatMessage msg = new ChatMessage(ChatMessage.Role.ASSISTANT, textContent, toolCalls, null);
+
+            // Extract token usage
+            if (json.has("usage") && json.get("usage").isJsonObject()) {
+                msg.setUsage(LlmUsage.fromOpenAiJson(json.getAsJsonObject("usage")));
+            }
+
+            return msg;
 
         } catch (LlmException e) {
             throw e;

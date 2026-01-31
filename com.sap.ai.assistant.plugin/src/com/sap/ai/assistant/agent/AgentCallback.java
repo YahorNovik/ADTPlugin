@@ -2,6 +2,7 @@ package com.sap.ai.assistant.agent;
 
 import com.sap.ai.assistant.model.ChatMessage;
 import com.sap.ai.assistant.model.DiffRequest;
+import com.sap.ai.assistant.model.RequestLogEntry;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolResult;
 
@@ -63,6 +64,16 @@ public interface AgentCallback {
      * @param diffRequest the proposed change details
      */
     void onDiffApprovalNeeded(DiffRequest diffRequest);
+
+    /**
+     * Called after each LLM API request completes, with request/response metadata
+     * including token usage and timing.
+     *
+     * @param entry the log entry for this request
+     */
+    default void onRequestComplete(RequestLogEntry entry) {
+        // Default no-op so existing implementations don't break
+    }
 
     /**
      * Called when the agent loop encounters an unrecoverable error.

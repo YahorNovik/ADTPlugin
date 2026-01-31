@@ -27,6 +27,9 @@ public abstract class AbstractLlmProvider implements LlmProvider {
     protected final HttpClient httpClient;
     protected final LlmProviderConfig config;
 
+    /** Duration of the last HTTP request in milliseconds. */
+    private volatile long lastRequestDurationMs;
+
     protected AbstractLlmProvider(LlmProviderConfig config) {
         this.config = config;
         this.httpClient = buildHttpClient();
@@ -79,7 +82,9 @@ public abstract class AbstractLlmProvider implements LlmProvider {
             addAuthHeaders(builder);
 
             HttpRequest request = builder.build();
+            long startTime = System.currentTimeMillis();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            lastRequestDurationMs = System.currentTimeMillis() - startTime;
 
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 String errorMsg = parseErrorMessage(response.body());
@@ -124,6 +129,13 @@ public abstract class AbstractLlmProvider implements LlmProvider {
 
     protected abstract String getAuthHeaderName();
     protected abstract String getAuthHeaderValue();
+
+    /**
+     * Returns the duration of the last HTTP request in milliseconds.
+     */
+    public long getLastRequestDurationMs() {
+        return lastRequestDurationMs;
+    }
 
     protected String parseErrorMessage(String responseBody) {
         if (responseBody == null || responseBody.isEmpty()) {

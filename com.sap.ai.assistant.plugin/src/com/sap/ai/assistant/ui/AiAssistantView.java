@@ -37,7 +37,9 @@ import com.sap.ai.assistant.model.ChatConversation;
 import com.sap.ai.assistant.model.ChatMessage;
 import com.sap.ai.assistant.model.DiffRequest;
 import com.sap.ai.assistant.model.LlmProviderConfig;
+import com.sap.ai.assistant.model.RequestLogEntry;
 import com.sap.ai.assistant.model.SapSystemConnection;
+import com.sap.ai.assistant.model.UsageTracker;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
@@ -65,11 +67,13 @@ public class AiAssistantView extends ViewPart {
     private Label modelLabel;
     private Button autoFixButton;
     private ChatComposite chatComposite;
+    private DevLogComposite devLog;
 
     // ---- State ----
     private EditorContextTracker contextTracker;
     private ConversationManager conversationManager;
     private Job currentJob;
+    private UsageTracker usageTracker;
 
     // ==================================================================
     // ViewPart lifecycle
@@ -81,9 +85,12 @@ public class AiAssistantView extends ViewPart {
 
         createToolbar(parent);
         createChatArea(parent);
+        createDevLog(parent);
         registerEditorContextTracker();
 
         conversationManager = new ConversationManager();
+        usageTracker = new UsageTracker();
+        devLog.setTracker(usageTracker);
         updateModelLabel();
     }
 
@@ -169,6 +176,10 @@ public class AiAssistantView extends ViewPart {
         chatComposite.setSendHandler(this::handleSend);
         chatComposite.setStopHandler(this::handleStop);
         chatComposite.setNewChatHandler(this::handleNewChat);
+    }
+
+    private void createDevLog(Composite parent) {
+        devLog = new DevLogComposite(parent, SWT.NONE);
     }
 
     private void registerEditorContextTracker() {
@@ -344,6 +355,10 @@ public class AiAssistantView extends ViewPart {
         String mcpServersJson = store.getString(PreferenceConstants.MCP_SERVERS);
         final List<McpServerConfig> mcpConfigs = McpServerConfig.fromJson(mcpServersJson);
 
+        // Capture token totals at turn start for per-turn usage display
+        final int turnStartIn = usageTracker != null ? usageTracker.getTotalInputTokens() : 0;
+        final int turnStartOut = usageTracker != null ? usageTracker.getTotalOutputTokens() : 0;
+
         // Run agent loop in background
         currentJob = new Job("SAP AI Assistant") {
             @Override
@@ -416,7 +431,7 @@ public class AiAssistantView extends ViewPart {
                     }
 
                     // Create and run agent loop (pass restClient for diff preview)
-                    AgentLoop agent = new AgentLoop(llmProvider, toolRegistry, restClient);
+                    AgentLoop agent = new AgentLoop(llmProvider, toolRegistry, restClient, finalConfig);
 
                     agent.run(finalConversation, new AgentCallback() {
 
@@ -452,6 +467,16 @@ public class AiAssistantView extends ViewPart {
                         public void onComplete(ChatMessage finalMessage) {
                             display.asyncExec(() -> {
                                 chatComposite.finishStreamingMessage();
+                                // Show per-turn token usage
+                                if (usageTracker != null) {
+                                    int turnIn = usageTracker.getTotalInputTokens() - turnStartIn;
+                                    int turnOut = usageTracker.getTotalOutputTokens() - turnStartOut;
+                                    if (turnIn > 0 || turnOut > 0) {
+                                        chatComposite.showTokenUsage(
+                                            formatTokenCount(turnIn) + " in / "
+                                            + formatTokenCount(turnOut) + " out");
+                                    }
+                                }
                                 chatComposite.setRunning(false);
                                 updateAutoFixButton();
                             });
@@ -465,6 +490,16 @@ public class AiAssistantView extends ViewPart {
                                         "Error: " + error.getMessage());
                                 chatComposite.setRunning(false);
                                 updateAutoFixButton();
+                            });
+                        }
+
+                        @Override
+                        public void onRequestComplete(RequestLogEntry entry) {
+                            usageTracker.addEntry(entry);
+                            display.asyncExec(() -> {
+                                if (devLog != null && !devLog.isDisposed()) {
+                                    devLog.addEntry(entry);
+                                }
                             });
                         }
                     });
@@ -534,6 +569,13 @@ public class AiAssistantView extends ViewPart {
         chatComposite.setContextLabel("");
         systemSelector.setEnabled(true);
 
+        if (usageTracker != null) {
+            usageTracker.clear();
+        }
+        if (devLog != null && !devLog.isDisposed()) {
+            devLog.clearLog();
+        }
+
         if (conversationManager != null) {
             conversationManager = new ConversationManager();
         }
@@ -596,6 +638,12 @@ public class AiAssistantView extends ViewPart {
     // ==================================================================
     // Helpers
     // ==================================================================
+
+    private String formatTokenCount(int n) {
+        if (n < 1000) return String.valueOf(n);
+        if (n < 1000000) return String.format("%.0fK", n / 1000.0);
+        return String.format("%.1fM", n / 1000000.0);
+    }
 
     private void updateModelLabel() {
         if (modelLabel == null || modelLabel.isDisposed()) return;

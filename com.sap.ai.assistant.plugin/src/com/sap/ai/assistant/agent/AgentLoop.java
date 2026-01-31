@@ -407,8 +407,10 @@ public class AgentLoop {
     private String resolveObjectName(String toolName, JsonObject args) {
         if (SetSourceTool.NAME.equals(toolName)) {
             String url = args.has("objectSourceUrl") ? args.get("objectSourceUrl").getAsString() : "";
+            // Normalize Eclipse workspace URIs before extracting name
+            String normalized = AbstractSapTool.ensureSourceUrl(url);
             // Extract name from URL like /sap/bc/adt/programs/programs/ztest/source/main
-            String[] parts = url.split("/");
+            String[] parts = normalized.split("/");
             for (int i = parts.length - 1; i >= 0; i--) {
                 if (!"source".equals(parts[i]) && !"main".equals(parts[i]) && !parts[i].isEmpty()) {
                     return parts[i].toUpperCase();

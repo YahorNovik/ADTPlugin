@@ -23,6 +23,7 @@ public class ChatMessage {
     private final String textContent;
     private final List<ToolCall> toolCalls;
     private final List<ToolResult> toolResults;
+    private LlmUsage usage;
 
     /**
      * Full constructor.
@@ -109,6 +110,14 @@ public class ChatMessage {
 
     public List<ToolResult> getToolResults() {
         return Collections.unmodifiableList(toolResults);
+    }
+
+    public LlmUsage getUsage() {
+        return usage;
+    }
+
+    public void setUsage(LlmUsage usage) {
+        this.usage = usage;
     }
 
     @Override

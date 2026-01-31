@@ -151,6 +151,22 @@ public class ChatComposite extends Composite {
     }
 
     /**
+     * Show a compact token usage label below the last assistant message.
+     *
+     * @param text token usage summary (e.g. "1,234 in / 567 out")
+     */
+    public void showTokenUsage(String text) {
+        if (isDisposed() || messagesContainer == null || messagesContainer.isDisposed()) return;
+        Label usageLabel = new Label(messagesContainer, SWT.NONE);
+        usageLabel.setText(text);
+        usageLabel.setForeground(getDisplay().getSystemColor(SWT.COLOR_WIDGET_NORMAL_SHADOW));
+        GridData gd = new GridData(SWT.END, SWT.CENTER, true, false);
+        gd.horizontalIndent = 8;
+        usageLabel.setLayoutData(gd);
+        layoutAndScroll();
+    }
+
+    /**
      * Add a collapsible tool-call widget to the message area.
      *
      * @param call the tool call being executed

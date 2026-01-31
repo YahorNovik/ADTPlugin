@@ -82,21 +82,26 @@ public abstract class AbstractSapTool implements SapTool {
      * Ensure a URL points to the source endpoint ({@code /source/main}),
      * not just the object itself.
      * <p>
-     * When the LLM passes an Eclipse workspace URI or an object URL like
-     * {@code /sap/bc/adt/programs/programs/ztest}, SAP APIs for source
-     * operations (syntax check, PUT source, lock/unlock) require the
-     * full source URL {@code /sap/bc/adt/programs/programs/ztest/source/main}.
+     * When the LLM passes an Eclipse workspace URI (e.g.
+     * {@code E19_100/.adt/programs/programs/ztest/ztest.asprog})
+     * or an object URL like {@code /sap/bc/adt/programs/programs/ztest},
+     * SAP APIs for source operations (syntax check, PUT source, lock/unlock)
+     * require the full source URL
+     * {@code /sap/bc/adt/programs/programs/ztest/source/main}.
      * </p>
      *
-     * @param url the ADT URL (may be object URL or source URL)
+     * @param url the ADT URL (may be Eclipse workspace URI, object URL, or source URL)
      * @return the source URL with {@code /source/main} appended if needed
      */
     public static String ensureSourceUrl(String url) {
         if (url == null || url.isEmpty()) {
             return url;
         }
+        // First, normalize Eclipse workspace URIs to standard ADT REST paths
+        String normalized = normalizeEclipseUri(url);
+
         // Strip query string for pattern matching
-        String path = url;
+        String path = normalized;
         String query = "";
         int qIdx = path.indexOf('?');
         if (qIdx >= 0) {
@@ -105,7 +110,7 @@ public abstract class AbstractSapTool implements SapTool {
         }
         // Already a source URL
         if (path.contains("/source/")) {
-            return url;
+            return normalized;
         }
         // Known object types: append /source/main
         if (path.matches(".*/programs/programs/[^/]+")
@@ -113,6 +118,58 @@ public abstract class AbstractSapTool implements SapTool {
                 || path.matches(".*/oo/interfaces/[^/]+")) {
             return path + "/source/main" + query;
         }
-        return url;
+        return normalized;
+    }
+
+    /**
+     * Normalize an Eclipse workspace URI to a standard ADT REST path.
+     * <p>
+     * Converts URIs like
+     * {@code E19_100/.adt/programs/programs/ztest/ztest.asprog}
+     * to {@code /sap/bc/adt/programs/programs/ztest}.
+     * </p>
+     * <p>
+     * Standard paths starting with {@code /sap/} pass through unchanged.
+     * </p>
+     *
+     * @param url the raw URL (may be Eclipse workspace URI or standard ADT path)
+     * @return the normalized ADT REST path
+     */
+    private static String normalizeEclipseUri(String url) {
+        if (url == null || url.isEmpty() || url.startsWith("/sap/")) {
+            return url;
+        }
+        int adtIdx = url.indexOf("/.adt/");
+        if (adtIdx < 0) {
+            return url; // not an Eclipse workspace URI
+        }
+
+        String rest = url.substring(adtIdx + "/.adt/".length());
+
+        // Separate query string from path
+        String query = "";
+        int queryIdx = rest.indexOf('?');
+        if (queryIdx >= 0) {
+            query = rest.substring(queryIdx);
+            rest = rest.substring(0, queryIdx);
+        }
+
+        // Remove Eclipse file extensions (.asprog, .aclas, .aint, .fugr, .func, .ddls, etc.)
+        rest = rest.replaceFirst("\\.[a-zA-Z]+$", "");
+
+        // Remove duplicate trailing path segment (Eclipse pattern: .../ztest/ztest)
+        int lastSlash = rest.lastIndexOf('/');
+        if (lastSlash > 0) {
+            String lastName = rest.substring(lastSlash + 1);
+            int prevSlash = rest.lastIndexOf('/', lastSlash - 1);
+            if (prevSlash >= 0) {
+                String prevName = rest.substring(prevSlash + 1, lastSlash);
+                if (prevName.equalsIgnoreCase(lastName)) {
+                    rest = rest.substring(0, lastSlash);
+                }
+            }
+        }
+
+        return "/sap/bc/adt/" + rest + query;
     }
 }

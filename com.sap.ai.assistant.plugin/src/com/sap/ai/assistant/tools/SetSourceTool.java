@@ -71,15 +71,39 @@ public class SetSourceTool extends AbstractSapTool {
         String source = arguments.get("source").getAsString();
         String transport = optString(arguments, "transport");
 
-        return lockWriteUnlock(objectSourceUrl, source, transport, 1);
+        return lockWriteUnlock(objectSourceUrl, source, transport);
     }
 
     /**
      * Lock, write, and unlock with retry on HTTP 423 (invalid lock handle).
-     * On 423, unlocks the stale handle, re-acquires a fresh lock, and retries once.
+     * Retries up to 3 times with a 500ms delay between attempts to handle
+     * race conditions.
      */
     private ToolResult lockWriteUnlock(String objectSourceUrl, String source,
-                                        String transport, int attempt) throws Exception {
+                                        String transport) throws Exception {
+        final int maxAttempts = 3;
+        Exception lastError = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return lockWriteUnlockAttempt(objectSourceUrl, source, transport);
+            } catch (java.io.IOException e) {
+                lastError = e;
+                String msg = e.getMessage() != null ? e.getMessage() : "";
+                if (msg.contains("HTTP 423") && attempt < maxAttempts) {
+                    System.err.println("SetSourceTool: lock handle rejected (423), "
+                            + "retrying after delay (attempt " + attempt + "/" + maxAttempts + ")...");
+                    Thread.sleep(500);
+                    continue;
+                }
+                throw e;
+            }
+        }
+        throw lastError;
+    }
+
+    private ToolResult lockWriteUnlockAttempt(String objectSourceUrl, String source,
+                                               String transport) throws Exception {
         // Step 1: Lock the source URL
         String lockPath = objectSourceUrl + "?_action=LOCK&accessMode=MODIFY";
         HttpResponse<String> lockResp = client.post(lockPath, "",
@@ -106,16 +130,6 @@ public class SetSourceTool extends AbstractSapTool {
             output.addProperty("status", "success");
             output.addProperty("statusCode", response.statusCode());
             return ToolResult.success(null, output.toString());
-
-        } catch (java.io.IOException e) {
-            // On 423 (invalid lock handle), retry once with a fresh lock
-            String msg = e.getMessage() != null ? e.getMessage() : "";
-            if (msg.contains("HTTP 423") && attempt < 2) {
-                System.err.println("SetSourceTool: lock handle rejected (423), retrying...");
-                safeUnlock(objectSourceUrl, lockHandle);
-                return lockWriteUnlock(objectSourceUrl, source, transport, attempt + 1);
-            }
-            throw e;
         } finally {
             safeUnlock(objectSourceUrl, lockHandle);
         }

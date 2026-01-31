@@ -11,6 +11,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sap.ai.assistant.model.ChatMessage;
 import com.sap.ai.assistant.model.LlmProviderConfig;
+import com.sap.ai.assistant.model.LlmUsage;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
@@ -218,7 +219,14 @@ public class AnthropicProvider extends AbstractLlmProvider {
             }
 
             String text = textContent.length() > 0 ? textContent.toString() : null;
-            return new ChatMessage(ChatMessage.Role.ASSISTANT, text, toolCalls, null);
+            ChatMessage msg = new ChatMessage(ChatMessage.Role.ASSISTANT, text, toolCalls, null);
+
+            // Extract token usage
+            if (json.has("usage") && json.get("usage").isJsonObject()) {
+                msg.setUsage(LlmUsage.fromAnthropicJson(json.getAsJsonObject("usage")));
+            }
+
+            return msg;
 
         } catch (Exception e) {
             throw new LlmException("Failed to parse Anthropic response: " + e.getMessage(), e);
