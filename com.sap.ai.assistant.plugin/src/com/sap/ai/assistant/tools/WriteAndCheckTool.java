@@ -326,32 +326,36 @@ public class WriteAndCheckTool extends AbstractSapTool {
 
     private void lockWriteUnlockAttempt(String sourceUrl, String source,
                                          String transport) throws Exception {
-        String lockPath = sourceUrl + "?_action=LOCK&accessMode=MODIFY";
+        // Lock and unlock target the OBJECT URL (without /source/main),
+        // while the PUT targets the SOURCE URL -- matching SAP ADT protocol.
+        String objectUrl = toObjectUrl(sourceUrl);
+
+        String lockPath = objectUrl + "?_action=LOCK&accessMode=MODIFY";
         HttpResponse<String> lockResp = client.post(lockPath, "",
                 "application/*",
-                "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
+                "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result;q=0.8, "
+                + "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result2;q=0.9");
         String lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
 
         if (lockHandle == null || lockHandle.isEmpty()) {
             throw new java.io.IOException(
-                    "Failed to acquire lock on " + sourceUrl + ". Response: " + lockResp.body());
+                    "Failed to acquire lock on " + objectUrl + ". Response: " + lockResp.body());
         }
 
         try {
-            String separator = sourceUrl.contains("?") ? "&" : "?";
-            String writePath = sourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
+            String writePath = sourceUrl + "?lockHandle=" + urlEncode(lockHandle);
             if (transport != null && !transport.isEmpty()) {
                 writePath = writePath + "&corrNr=" + urlEncode(transport);
             }
             client.put(writePath, source, "text/plain; charset=utf-8");
         } finally {
-            safeUnlock(sourceUrl, lockHandle);
+            safeUnlock(objectUrl, lockHandle);
         }
     }
 
-    private void safeUnlock(String sourceUrl, String lockHandle) {
+    private void safeUnlock(String objectUrl, String lockHandle) {
         try {
-            String unlockPath = sourceUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
+            String unlockPath = objectUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
             client.post(unlockPath, "", "application/*", "application/*");
         } catch (Exception e) {
             // Ignore -- lock may already be released or handle invalid

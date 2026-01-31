@@ -102,42 +102,46 @@ public class SetSourceTool extends AbstractSapTool {
         throw lastError;
     }
 
-    private ToolResult lockWriteUnlockAttempt(String objectSourceUrl, String source,
+    private ToolResult lockWriteUnlockAttempt(String sourceUrl, String source,
                                                String transport) throws Exception {
-        // Step 1: Lock the source URL
-        String lockPath = objectSourceUrl + "?_action=LOCK&accessMode=MODIFY";
+        // Lock and unlock target the OBJECT URL (without /source/main),
+        // while the PUT targets the SOURCE URL -- matching SAP ADT protocol.
+        String objectUrl = toObjectUrl(sourceUrl);
+
+        // Step 1: Lock the object
+        String lockPath = objectUrl + "?_action=LOCK&accessMode=MODIFY";
         HttpResponse<String> lockResp = client.post(lockPath, "",
                 "application/*",
-                "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result");
+                "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result;q=0.8, "
+                + "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result2;q=0.9");
         String lockHandle = AdtXmlParser.extractLockHandle(lockResp.body());
 
         if (lockHandle == null || lockHandle.isEmpty()) {
             return ToolResult.error(null,
-                    "Failed to acquire lock on " + objectSourceUrl + ". Response: " + lockResp.body());
+                    "Failed to acquire lock on " + objectUrl + ". Response: " + lockResp.body());
         }
 
         try {
-            // Step 2: Write source with lockHandle as query parameter
-            String separator = objectSourceUrl.contains("?") ? "&" : "?";
-            String path = objectSourceUrl + separator + "lockHandle=" + urlEncode(lockHandle);
+            // Step 2: Write source to the SOURCE URL with lockHandle
+            String writePath = sourceUrl + "?lockHandle=" + urlEncode(lockHandle);
             if (transport != null && !transport.isEmpty()) {
-                path = path + "&corrNr=" + urlEncode(transport);
+                writePath = writePath + "&corrNr=" + urlEncode(transport);
             }
 
-            HttpResponse<String> response = client.put(path, source, "text/plain; charset=utf-8");
+            HttpResponse<String> response = client.put(writePath, source, "text/plain; charset=utf-8");
 
             JsonObject output = new JsonObject();
             output.addProperty("status", "success");
             output.addProperty("statusCode", response.statusCode());
             return ToolResult.success(null, output.toString());
         } finally {
-            safeUnlock(objectSourceUrl, lockHandle);
+            safeUnlock(objectUrl, lockHandle);
         }
     }
 
-    private void safeUnlock(String objectSourceUrl, String lockHandle) {
+    private void safeUnlock(String objectUrl, String lockHandle) {
         try {
-            String unlockPath = objectSourceUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
+            String unlockPath = objectUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);
             client.post(unlockPath, "", "application/*", "application/*");
         } catch (Exception e) {
             // Ignore -- lock may already be released or handle invalid

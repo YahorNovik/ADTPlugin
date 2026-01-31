@@ -122,6 +122,38 @@ public abstract class AbstractSapTool implements SapTool {
     }
 
     /**
+     * Derive the object URL from a source URL by stripping the
+     * {@code /source/...} suffix.
+     * <p>
+     * SAP ADT requires that lock/unlock operations target the
+     * <b>object URL</b> (e.g. {@code /sap/bc/adt/programs/programs/ztest}),
+     * while write (PUT) operations target the <b>source URL</b>
+     * (e.g. {@code /sap/bc/adt/programs/programs/ztest/source/main}).
+     * </p>
+     *
+     * @param sourceUrl the full source URL
+     * @return the object URL (without {@code /source/...})
+     */
+    public static String toObjectUrl(String sourceUrl) {
+        if (sourceUrl == null || sourceUrl.isEmpty()) {
+            return sourceUrl;
+        }
+        // Strip query string first
+        String path = sourceUrl;
+        String query = "";
+        int qIdx = path.indexOf('?');
+        if (qIdx >= 0) {
+            query = path.substring(qIdx);
+            path = path.substring(0, qIdx);
+        }
+        int sourceIdx = path.indexOf("/source/");
+        if (sourceIdx >= 0) {
+            return path.substring(0, sourceIdx) + query;
+        }
+        return sourceUrl;
+    }
+
+    /**
      * Normalize an Eclipse workspace URI to a standard ADT REST path.
      * <p>
      * Converts URIs like
