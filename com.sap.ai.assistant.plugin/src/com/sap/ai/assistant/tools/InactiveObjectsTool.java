@@ -43,7 +43,7 @@ public class InactiveObjectsTool extends AbstractSapTool {
     public ToolResult execute(JsonObject arguments) throws Exception {
         HttpResponse<String> resp = client.get(
                 "/sap/bc/adt/activation/inactiveobjects",
-                "application/xml");
+                "application/vnd.sap.adt.inactivectsobjects.v1+xml, application/xml;q=0.8");
 
         JsonObject result = AdtXmlParser.parseInactiveObjects(resp.body());
         return ToolResult.success(null, result.toString());

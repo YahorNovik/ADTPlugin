@@ -434,6 +434,15 @@ public class AdtRestClient {
         return loggedIn;
     }
 
+    /**
+     * Returns the SAP username used by this client.
+     *
+     * @return the username
+     */
+    public String getUsername() {
+        return username;
+    }
+
     // ---------------------------------------------------------------
     // Private helpers
     // ---------------------------------------------------------------

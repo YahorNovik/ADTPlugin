@@ -20,9 +20,9 @@ public class TypeInfoTool extends AbstractSapTool {
     public static final String NAME = "sap_type_info";
 
     private static final String[][] ENDPOINTS = {
-        { "/sap/bc/adt/ddic/dataelements/", "application/vnd.sap.adt.dataelements.v2+xml", "DTEL" },
-        { "/sap/bc/adt/ddic/domains/",      "application/vnd.sap.adt.domains.v2+xml",      "DOMA" },
-        { "/sap/bc/adt/ddic/tabletypes/",    "application/vnd.sap.adt.tabletypes.v2+xml",   "TTYP" },
+        { "/sap/bc/adt/ddic/dataelements/", "application/vnd.sap.adt.dataelements.v2+xml, application/xml", "DTEL" },
+        { "/sap/bc/adt/ddic/domains/",      "application/vnd.sap.adt.domains.v2+xml, application/xml",      "DOMA" },
+        { "/sap/bc/adt/ddic/tabletypes/",    "application/vnd.sap.adt.tabletypes.v2+xml, application/xml",   "TTYP" },
     };
 
     public TypeInfoTool(AdtRestClient client) {

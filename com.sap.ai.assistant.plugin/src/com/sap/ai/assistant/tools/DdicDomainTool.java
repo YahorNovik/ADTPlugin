@@ -48,15 +48,15 @@ public class DdicDomainTool extends AbstractDdicSourceTool {
     protected String buildCreationXml(String name, String description,
                                        String packageName, String packagePath) {
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                + "<blue:blueSource xmlns:blue=\"http://www.sap.com/wbobj/blue\" "
+                + "<doma:domain xmlns:doma=\"http://www.sap.com/dictionary/domain\" "
                 + "xmlns:adtcore=\"http://www.sap.com/adt/core\" "
                 + "adtcore:name=\"" + escapeXml(name.toUpperCase()) + "\" "
                 + "adtcore:type=\"DOMA/DD\" "
                 + "adtcore:description=\"" + escapeXml(description) + "\" "
-                + "adtcore:language=\"EN\">"
-                + "<adtcore:packageRef adtcore:name=\"" + escapeXml(packageName) + "\" "
-                + "adtcore:uri=\"" + escapeXml(packagePath) + "\"/>"
-                + "</blue:blueSource>";
+                + "adtcore:language=\"EN\" "
+                + "adtcore:masterLanguage=\"EN\">"
+                + "<adtcore:packageRef adtcore:name=\"" + escapeXml(packageName) + "\"/>"
+                + "</doma:domain>";
     }
 
     @Override

@@ -44,7 +44,7 @@ public class CreateTransportTool extends AbstractSapTool {
         JsonObject typeProp = new JsonObject();
         typeProp.addProperty("type", "string");
         typeProp.addProperty("description",
-                "Transport type: 'K' for workbench (default), 'W' for customizing");
+                "Transport type: 'K' for workbench (default), 'T' for customizing");
 
         JsonObject targetProp = new JsonObject();
         targetProp.addProperty("type", "string");
@@ -76,13 +76,14 @@ public class CreateTransportTool extends AbstractSapTool {
         if (type == null || type.isEmpty()) type = "K";
         String targetSystem = optString(arguments, "targetSystem");
 
-        String xmlBody = buildTransportXml(description, type, targetSystem);
+        String owner = client.getUsername();
+        String xmlBody = buildTransportXml(description, type, targetSystem, owner);
 
         HttpResponse<String> resp = client.post(
                 "/sap/bc/adt/cts/transportrequests",
                 xmlBody,
-                "application/vnd.sap.adt.transportorganizer.v1+xml",
-                "application/vnd.sap.adt.transportorganizer.v1+xml, application/xml");
+                "text/plain",
+                "application/vnd.sap.adt.transportorganizer.v1+xml");
 
         String transportNumber = parseTransportNumber(resp.body(), resp);
 
@@ -94,16 +95,22 @@ public class CreateTransportTool extends AbstractSapTool {
         return ToolResult.success(null, result.toString());
     }
 
-    private String buildTransportXml(String description, String type, String targetSystem) {
+    private String buildTransportXml(String description, String type,
+                                      String targetSystem, String owner) {
+        String target = (targetSystem != null && !targetSystem.isEmpty())
+                ? "/" + escapeXml(targetSystem) + "/"
+                : "LOCAL";
+        if (owner == null || owner.isEmpty()) owner = "";
+
         StringBuilder xml = new StringBuilder();
-        xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        xml.append("<tm:root xmlns:tm=\"http://www.sap.com/cts/transports\">");
+        xml.append("<?xml version=\"1.0\" encoding=\"ASCII\"?>");
+        xml.append("<tm:root xmlns:tm=\"http://www.sap.com/cts/adt/tm\" tm:useraction=\"newrequest\">");
         xml.append("<tm:request tm:desc=\"").append(escapeXml(description)).append("\" ");
-        xml.append("tm:type=\"").append(escapeXml(type)).append("\"");
-        if (targetSystem != null && !targetSystem.isEmpty()) {
-            xml.append(" tm:target=\"").append(escapeXml(targetSystem)).append("\"");
-        }
-        xml.append("/>");
+        xml.append("tm:type=\"").append(escapeXml(type)).append("\" ");
+        xml.append("tm:target=\"").append(target).append("\" ");
+        xml.append("tm:cts_project=\"\">");
+        xml.append("<tm:task tm:owner=\"").append(escapeXml(owner)).append("\"/>");
+        xml.append("</tm:request>");
         xml.append("</tm:root>");
         return xml.toString();
     }
