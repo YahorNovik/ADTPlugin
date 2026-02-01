@@ -46,6 +46,7 @@ public class AiAssistantPreferencePage extends PreferencePage
     private Text baseUrlText;
     private Label baseUrlLabel;
     private Combo modelCombo;
+    private Combo researchModelCombo;
     private Spinner maxTokensSpinner;
     private Button includeContextCheck;
     private Table sapSystemsTable;
@@ -101,6 +102,12 @@ public class AiAssistantPreferencePage extends PreferencePage
         new Label(llmGroup, SWT.NONE).setText("Model:");
         modelCombo = new Combo(llmGroup, SWT.DROP_DOWN);
         modelCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        // Research Model
+        new Label(llmGroup, SWT.NONE).setText("Research Model:");
+        researchModelCombo = new Combo(llmGroup, SWT.DROP_DOWN);
+        researchModelCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        researchModelCombo.setToolTipText("Model used by the research sub-agent (can be a cheaper/faster model)");
 
         // Max Tokens
         new Label(llmGroup, SWT.NONE).setText("Max Tokens:");
@@ -221,6 +228,7 @@ public class AiAssistantPreferencePage extends PreferencePage
 
         LlmProviderConfig.Provider provider = providers[idx];
         String currentModel = modelCombo.getText();
+        String currentResearchModel = researchModelCombo.getText();
         boolean isCustom = provider == LlmProviderConfig.Provider.CUSTOM;
 
         // Base URL: editable for Custom, show default for built-in
@@ -234,32 +242,70 @@ public class AiAssistantPreferencePage extends PreferencePage
             baseUrlText.setText(provider.getDefaultBaseUrl());
         }
 
-        // Update model dropdown with this provider's models
+        // Update model dropdowns with this provider's models
         modelCombo.removeAll();
+        researchModelCombo.removeAll();
         for (String model : provider.getAvailableModels()) {
             modelCombo.add(model);
+            researchModelCombo.add(model);
         }
 
         if (isCustom) {
             // Custom provider: user types model name freely
             modelCombo.setText(currentModel);
+            researchModelCombo.setText(currentResearchModel);
         } else {
-            // Try to keep the current model if it exists in the new provider
-            int found = -1;
-            for (int i = 0; i < provider.getAvailableModels().length; i++) {
-                if (provider.getAvailableModels()[i].equals(currentModel)) {
-                    found = i;
-                    break;
-                }
-            }
+            // Main model: try to keep current, else select default (first)
+            selectModelInCombo(modelCombo, currentModel, 0);
+            // Research model: try to keep current, else select default cheaper model
+            int researchDefault = getDefaultResearchModelIndex(provider);
+            selectModelInCombo(researchModelCombo, currentResearchModel, researchDefault);
+        }
+    }
 
-            if (found >= 0) {
-                modelCombo.select(found);
-            } else {
-                // Select the default model for this provider
-                modelCombo.select(0);
+    private void selectModelInCombo(Combo combo, String currentModel, int defaultIdx) {
+        int found = -1;
+        for (int i = 0; i < combo.getItemCount(); i++) {
+            if (combo.getItem(i).equals(currentModel)) {
+                found = i;
+                break;
             }
         }
+        if (found >= 0) {
+            combo.select(found);
+        } else if (defaultIdx >= 0 && defaultIdx < combo.getItemCount()) {
+            combo.select(defaultIdx);
+        } else if (combo.getItemCount() > 0) {
+            combo.select(0);
+        }
+    }
+
+    /**
+     * Returns the index of the default cheaper model for the research sub-agent.
+     */
+    private int getDefaultResearchModelIndex(LlmProviderConfig.Provider provider) {
+        String[] models = provider.getAvailableModels();
+        // Pick the last model in the list (typically the cheapest/fastest)
+        // Anthropic: haiku, OpenAI: nano/mini, Google: flash-lite, Mistral: small
+        switch (provider) {
+            case ANTHROPIC:
+                return findModelIndex(models, "claude-haiku-3-5-20241022");
+            case OPENAI:
+                return findModelIndex(models, "gpt-4.1-mini");
+            case GOOGLE:
+                return findModelIndex(models, "gemini-2.0-flash-lite");
+            case MISTRAL:
+                return findModelIndex(models, "mistral-small-latest");
+            default:
+                return 0;
+        }
+    }
+
+    private int findModelIndex(String[] models, String target) {
+        for (int i = 0; i < models.length; i++) {
+            if (models[i].equals(target)) return i;
+        }
+        return models.length > 0 ? models.length - 1 : 0;
     }
 
     private void loadValues() {
@@ -279,8 +325,10 @@ public class AiAssistantPreferencePage extends PreferencePage
         // Populate models for selected provider
         LlmProviderConfig.Provider selectedProvider = providers[providerIdx];
         modelCombo.removeAll();
+        researchModelCombo.removeAll();
         for (String model : selectedProvider.getAvailableModels()) {
             modelCombo.add(model);
+            researchModelCombo.add(model);
         }
 
         // Base URL
@@ -297,16 +345,33 @@ public class AiAssistantPreferencePage extends PreferencePage
         // Model
         String model = store.getString(PreferenceConstants.LLM_MODEL);
         if (model != null && !model.isEmpty()) {
-            // Try to select it in the combo
             int modelIdx = modelCombo.indexOf(model);
             if (modelIdx >= 0) {
                 modelCombo.select(modelIdx);
             } else {
-                // Custom model - set as text
                 modelCombo.setText(model);
             }
         } else if (modelCombo.getItemCount() > 0) {
             modelCombo.select(0);
+        }
+
+        // Research Model
+        String researchModel = store.getString(PreferenceConstants.RESEARCH_MODEL);
+        if (researchModel != null && !researchModel.isEmpty()) {
+            int resIdx = researchModelCombo.indexOf(researchModel);
+            if (resIdx >= 0) {
+                researchModelCombo.select(resIdx);
+            } else {
+                researchModelCombo.setText(researchModel);
+            }
+        } else {
+            // Default to a cheaper model
+            int defaultIdx = getDefaultResearchModelIndex(selectedProvider);
+            if (defaultIdx >= 0 && defaultIdx < researchModelCombo.getItemCount()) {
+                researchModelCombo.select(defaultIdx);
+            } else if (researchModelCombo.getItemCount() > 0) {
+                researchModelCombo.select(researchModelCombo.getItemCount() - 1);
+            }
         }
 
         // API Key
@@ -364,6 +429,7 @@ public class AiAssistantPreferencePage extends PreferencePage
 
         store.setValue(PreferenceConstants.LLM_API_KEY, apiKeyText.getText());
         store.setValue(PreferenceConstants.LLM_MODEL, modelCombo.getText());
+        store.setValue(PreferenceConstants.RESEARCH_MODEL, researchModelCombo.getText());
         store.setValue(PreferenceConstants.LLM_BASE_URL, baseUrlText.getText());
         store.setValue(PreferenceConstants.LLM_MAX_TOKENS, maxTokensSpinner.getSelection());
         store.setValue(PreferenceConstants.INCLUDE_CONTEXT, includeContextCheck.getSelection());
@@ -383,7 +449,7 @@ public class AiAssistantPreferencePage extends PreferencePage
     @Override
     protected void performDefaults() {
         providerCombo.select(0); // Anthropic
-        onProviderChanged();
+        onProviderChanged(); // This also sets research model to its default
         apiKeyText.setText("");
         baseUrlText.setText("");
         maxTokensSpinner.setSelection(8192);

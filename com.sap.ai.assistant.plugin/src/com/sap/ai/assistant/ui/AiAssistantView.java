@@ -46,8 +46,15 @@ import com.sap.ai.assistant.model.ToolResult;
 import com.sap.ai.assistant.preferences.PreferenceConstants;
 import com.sap.ai.assistant.sap.AdtCredentialProvider;
 import com.sap.ai.assistant.sap.AdtRestClient;
+import com.sap.ai.assistant.tools.FindDefinitionTool;
+import com.sap.ai.assistant.tools.GetSourceTool;
+import com.sap.ai.assistant.tools.NodeContentsTool;
+import com.sap.ai.assistant.tools.ObjectStructureTool;
+import com.sap.ai.assistant.tools.ResearchTool;
 import com.sap.ai.assistant.tools.SapTool;
 import com.sap.ai.assistant.tools.SapToolRegistry;
+import com.sap.ai.assistant.tools.SearchObjectTool;
+import com.sap.ai.assistant.tools.UsageReferencesTool;
 
 /**
  * The main Eclipse view for the SAP AI Assistant.
@@ -248,10 +255,11 @@ public class AiAssistantView extends ViewPart {
 
         // Gather configuration
         IPreferenceStore store = Activator.getDefault().getPreferenceStore();
-        String providerName = store.getString(PreferenceConstants.LLM_PROVIDER);
-        String apiKey       = store.getString(PreferenceConstants.LLM_API_KEY);
-        String model        = store.getString(PreferenceConstants.LLM_MODEL);
-        int maxTokens       = store.getInt(PreferenceConstants.LLM_MAX_TOKENS);
+        String providerName    = store.getString(PreferenceConstants.LLM_PROVIDER);
+        String apiKey          = store.getString(PreferenceConstants.LLM_API_KEY);
+        String model           = store.getString(PreferenceConstants.LLM_MODEL);
+        String researchModel   = store.getString(PreferenceConstants.RESEARCH_MODEL);
+        int maxTokens          = store.getInt(PreferenceConstants.LLM_MAX_TOKENS);
 
         // Validate API key
         if (apiKey == null || apiKey.trim().isEmpty()) {
@@ -270,6 +278,12 @@ public class AiAssistantView extends ViewPart {
         String baseUrl = store.getString(PreferenceConstants.LLM_BASE_URL);
         LlmProviderConfig config = new LlmProviderConfig(
                 provider, apiKey, model, baseUrl, maxTokens > 0 ? maxTokens : 8192);
+
+        // Build research sub-agent config (same provider/key, different model)
+        String effectiveResearchModel = (researchModel != null && !researchModel.isEmpty())
+                ? researchModel : model;
+        LlmProviderConfig researchConfig = new LlmProviderConfig(
+                provider, apiKey, effectiveResearchModel, baseUrl, maxTokens > 0 ? maxTokens : 8192);
 
         // Editor contexts from the dropdown selector
         List<AdtContext> selectedContexts = chatComposite.getSelectedContexts();
@@ -352,6 +366,7 @@ public class AiAssistantView extends ViewPart {
 
         // Capture final refs for the job
         final LlmProviderConfig finalConfig = config;
+        final LlmProviderConfig finalResearchConfig = researchConfig;
         final SapSystemConnection finalSystem = selectedSystem;
         final ChatConversation finalConversation = conversation;
         final List<AdtContext> finalEditorContexts = selectedContexts;
@@ -399,11 +414,9 @@ public class AiAssistantView extends ViewPart {
                         }
                     }
 
-                    // Create SAP REST client and tool registry
-                    SapToolRegistry toolRegistry = null;
+                    // Create SAP REST client
                     if (finalSystem != null) {
                         if (finalAdtSession != null) {
-                            // Use pre-authenticated ADT session (no password needed)
                             restClient = new AdtRestClient(
                                     finalSystem.getBaseUrl(),
                                     finalSystem.getUser(),
@@ -413,7 +426,6 @@ public class AiAssistantView extends ViewPart {
                                     finalAdtSession.getCookieManager(),
                                     finalAdtSession.getCsrfToken());
                         } else {
-                            // Standard password-based authentication
                             restClient = new AdtRestClient(
                                     finalSystem.getBaseUrl(),
                                     finalSystem.getUser(),
@@ -423,18 +435,45 @@ public class AiAssistantView extends ViewPart {
                                     false);
                         }
                         restClient.login();
-                        toolRegistry = new SapToolRegistry(restClient, mcpTools);
-                    } else if (!mcpTools.isEmpty()) {
-                        toolRegistry = SapToolRegistry.withToolsOnly(mcpTools);
                     }
 
-                    // Rebuild system prompt with the registry so tool
-                    // descriptions include MCP tools
-                    if (toolRegistry != null) {
-                        String updatedPrompt = ContextBuilder.buildSystemPrompt(
-                                finalEditorContexts, toolRegistry);
-                        finalConversation.setSystemPrompt(updatedPrompt);
+                    // Build research sub-agent (SAP read tools + MCP tools)
+                    boolean hasResearchTool = false;
+                    List<SapTool> mainAdditionalTools = new ArrayList<>();
+
+                    // Collect SAP read-only tools for the research sub-agent
+                    List<SapTool> researchTools = new ArrayList<>();
+                    if (restClient != null) {
+                        researchTools.add(new SearchObjectTool(restClient));
+                        researchTools.add(new GetSourceTool(restClient));
+                        researchTools.add(new ObjectStructureTool(restClient));
+                        researchTools.add(new NodeContentsTool(restClient));
+                        researchTools.add(new FindDefinitionTool(restClient));
+                        researchTools.add(new UsageReferencesTool(restClient));
                     }
+                    researchTools.addAll(mcpTools);
+
+                    if (!researchTools.isEmpty()) {
+                        // Create research LLM provider (same provider, potentially different model)
+                        LlmProvider researchLlmProvider = LlmProviderFactory.create(finalResearchConfig);
+                        SapToolRegistry researchRegistry = SapToolRegistry.withToolsOnly(researchTools);
+                        ResearchTool researchTool = new ResearchTool(researchLlmProvider, researchRegistry);
+                        mainAdditionalTools.add(researchTool);
+                        hasResearchTool = true;
+                    }
+
+                    // Build main tool registry (all SAP tools + research tool)
+                    SapToolRegistry toolRegistry = null;
+                    if (finalSystem != null) {
+                        toolRegistry = new SapToolRegistry(restClient, mainAdditionalTools);
+                    } else if (!mainAdditionalTools.isEmpty()) {
+                        toolRegistry = SapToolRegistry.withToolsOnly(mainAdditionalTools);
+                    }
+
+                    // Rebuild system prompt with research tool awareness
+                    String updatedPrompt = ContextBuilder.buildSystemPrompt(
+                            finalEditorContexts, toolRegistry, hasResearchTool);
+                    finalConversation.setSystemPrompt(updatedPrompt);
 
                     // Create and run agent loop (pass restClient for diff preview)
                     AgentLoop agent = new AgentLoop(llmProvider, toolRegistry, restClient, finalConfig);

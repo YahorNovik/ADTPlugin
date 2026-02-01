@@ -35,7 +35,8 @@ public class ContextBuilder {
      * @param registry the tool registry (currently unused; kept for API compat)
      * @return the assembled system prompt
      */
-    public static String buildSystemPrompt(List<AdtContext> contexts, SapToolRegistry registry) {
+    public static String buildSystemPrompt(List<AdtContext> contexts, SapToolRegistry registry,
+                                              boolean hasResearchTool) {
         StringBuilder sb = new StringBuilder();
 
         // -- Base identity --
@@ -59,10 +60,21 @@ public class ContextBuilder {
         sb.append("Only show short code snippets (under 10 lines) when explaining specific changes or errors. ");
         sb.append("This keeps responses concise and avoids duplicating code that is already in the tool call.\n\n");
 
-        // -- SAP Documentation tools (only if MCP tools might be registered) --
-        sb.append("## SAP Documentation\n\n");
-        sb.append("MCP documentation tools (prefixed with mcp_) can search SAP documentation, ");
-        sb.append("ABAP keyword reference, and SAP Help Portal.\n\n");
+        // -- Research tool / MCP documentation --
+        if (hasResearchTool) {
+            sb.append("## Research Tool\n\n");
+            sb.append("You have a `research` tool that delegates queries to a specialized sub-agent. ");
+            sb.append("Use it when you need to:\n");
+            sb.append("- Look up SAP documentation or ABAP keyword reference\n");
+            sb.append("- Search the SAP Help Portal for configuration, BAdIs, or enhancement spots\n");
+            sb.append("- Read and understand existing SAP object source code or structure\n");
+            sb.append("- Find class/interface definitions, method signatures, or data element details\n\n");
+            sb.append("The research sub-agent has access to MCP documentation servers and SAP read tools.\n\n");
+        } else {
+            sb.append("## SAP Documentation\n\n");
+            sb.append("MCP documentation tools (prefixed with mcp_) can search SAP documentation, ");
+            sb.append("ABAP keyword reference, and SAP Help Portal.\n\n");
+        }
 
         // -- ADT contexts --
         if (contexts != null && !contexts.isEmpty()) {
@@ -89,6 +101,13 @@ public class ContextBuilder {
     }
 
     /**
+     * Builds the full system prompt without the research tool section.
+     */
+    public static String buildSystemPrompt(List<AdtContext> contexts, SapToolRegistry registry) {
+        return buildSystemPrompt(contexts, registry, false);
+    }
+
+    /**
      * Builds the system prompt with a single ADT context.
      *
      * @param context  the current ADT context (may be {@code null})
@@ -99,7 +118,7 @@ public class ContextBuilder {
         List<AdtContext> contexts = (context != null)
                 ? Collections.singletonList(context)
                 : null;
-        return buildSystemPrompt(contexts, registry);
+        return buildSystemPrompt(contexts, registry, false);
     }
 
     /**
@@ -146,15 +165,6 @@ public class ContextBuilder {
         sb.append(context.getObjectType() != null ? context.getObjectType() : "object");
         sb.append(" \"").append(context.getObjectName()).append("\"");
 
-        if (context.getObjectUri() != null) {
-            sb.append(" (URI: ").append(context.getObjectUri()).append(")");
-        }
-
-        if (context.getCursorLine() > 0) {
-            sb.append(", cursor at line ").append(context.getCursorLine())
-              .append(" col ").append(context.getCursorColumn());
-        }
-
         if (context.getSelectedText() != null && !context.getSelectedText().isEmpty()) {
             sb.append(", selected text: \"").append(context.getSelectedText()).append("\"");
         }
@@ -180,15 +190,6 @@ public class ContextBuilder {
                 sb.append(" (").append(context.getObjectType()).append(")");
             }
             sb.append("\n");
-        }
-
-        if (context.getObjectUri() != null && !context.getObjectUri().isEmpty()) {
-            sb.append("- **URI**: ").append(context.getObjectUri()).append("\n");
-        }
-
-        if (context.getCursorLine() > 0) {
-            sb.append("- **Cursor position**: line ").append(context.getCursorLine())
-              .append(", column ").append(context.getCursorColumn()).append("\n");
         }
 
         if (context.getSelectedText() != null && !context.getSelectedText().isEmpty()) {

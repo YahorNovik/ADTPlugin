@@ -27,6 +27,9 @@ public final class PreferenceConstants {
     /** Whether to include the current editor context in prompts. */
     public static final String INCLUDE_CONTEXT = "com.sap.ai.assistant.includeContext";
 
+    /** The model identifier for the research sub-agent (uses same provider/API key). */
+    public static final String RESEARCH_MODEL = "com.sap.ai.assistant.llm.researchModel";
+
     /** JSON array of MCP server configurations. */
     public static final String MCP_SERVERS = "com.sap.ai.assistant.mcp.servers";
 

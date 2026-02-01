@@ -15,7 +15,9 @@ import org.eclipse.swt.layout.RowLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.Shell;
 
 import com.sap.ai.assistant.model.AdtContext;
@@ -135,8 +137,11 @@ public class ContextSelectorComposite extends Composite {
     // ------------------------------------------------------------------
 
     private void showDropdown() {
+        // Toggle: if already open, close it
         if (dropdownShell != null && !dropdownShell.isDisposed()) {
             dropdownShell.dispose();
+            dropdownShell = null;
+            return;
         }
 
         if (availableContexts.isEmpty()) return;
@@ -193,13 +198,54 @@ public class ContextSelectorComposite extends Composite {
 
         dropdownShell.setVisible(true);
 
-        // Close on focus loss
-        dropdownShell.addListener(SWT.Deactivate, e -> {
+        // Close on click outside: use a display-level mouse filter
+        final Shell popup = dropdownShell;
+        final Listener outsideClickFilter = new Listener() {
+            @Override
+            public void handleEvent(Event event) {
+                if (popup.isDisposed()) {
+                    getDisplay().removeFilter(SWT.MouseDown, this);
+                    return;
+                }
+                // Check if the click is inside the dropdown shell
+                Control target = getDisplay().getCursorControl();
+                if (target != null) {
+                    Shell targetShell = target.getShell();
+                    if (targetShell == popup) {
+                        return; // Click inside popup — do nothing
+                    }
+                }
+                // Click outside — close the popup
+                getDisplay().removeFilter(SWT.MouseDown, this);
+                if (!popup.isDisposed()) {
+                    popup.dispose();
+                }
+                if (dropdownShell == popup) {
+                    dropdownShell = null;
+                }
+            }
+        };
+        getDisplay().addFilter(SWT.MouseDown, outsideClickFilter);
+
+        // Also close on Deactivate (covers Alt-Tab, etc.)
+        popup.addListener(SWT.Deactivate, e -> {
             getDisplay().asyncExec(() -> {
-                if (dropdownShell != null && !dropdownShell.isDisposed()) {
-                    dropdownShell.dispose();
+                getDisplay().removeFilter(SWT.MouseDown, outsideClickFilter);
+                if (!popup.isDisposed()) {
+                    popup.dispose();
+                }
+                if (dropdownShell == popup) {
+                    dropdownShell = null;
                 }
             });
+        });
+
+        // Clean up filter on dispose
+        popup.addListener(SWT.Dispose, e -> {
+            getDisplay().removeFilter(SWT.MouseDown, outsideClickFilter);
+            if (dropdownShell == popup) {
+                dropdownShell = null;
+            }
         });
     }
 

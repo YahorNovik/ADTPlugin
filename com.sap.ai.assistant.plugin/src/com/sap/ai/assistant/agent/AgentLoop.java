@@ -44,16 +44,16 @@ import com.sap.ai.assistant.tools.WriteAndCheckTool;
 public class AgentLoop {
 
     /**
-     * Maximum number of tool-call rounds before the loop is forcibly terminated.
+     * Default maximum number of tool-call rounds before the loop is forcibly terminated.
      * This prevents runaway loops where the LLM keeps requesting tool calls indefinitely.
      */
-    public static final int MAX_TOOL_ROUNDS = 20;
+    public static final int DEFAULT_MAX_TOOL_ROUNDS = 20;
 
     /**
-     * Maximum cumulative input tokens across all rounds of a single agent run.
+     * Default maximum cumulative input tokens across all rounds of a single agent run.
      * When exceeded the loop stops and returns a budget-exceeded message to the user.
      */
-    public static final int MAX_INPUT_TOKENS = 50_000;
+    public static final int DEFAULT_MAX_INPUT_TOKENS = 50_000;
 
     /** Pattern to extract the human-readable message from SAP ADT XML exceptions. */
     private static final Pattern SAP_XML_MESSAGE_PATTERN =
@@ -63,9 +63,32 @@ public class AgentLoop {
     private final SapToolRegistry toolRegistry;
     private final AdtRestClient restClient;
     private final LlmProviderConfig config;
+    private final int maxToolRounds;
+    private final int maxInputTokens;
 
     /**
-     * Creates a new agent loop.
+     * Creates a new agent loop with custom limits.
+     *
+     * @param llmProvider    the LLM provider to use for generating responses
+     * @param toolRegistry   the registry of available SAP tools
+     * @param restClient     the ADT REST client (nullable; needed for diff preview)
+     * @param config         the LLM configuration (for logging model name)
+     * @param maxToolRounds  maximum number of tool-call rounds
+     * @param maxInputTokens maximum cumulative input tokens
+     */
+    public AgentLoop(LlmProvider llmProvider, SapToolRegistry toolRegistry,
+                     AdtRestClient restClient, LlmProviderConfig config,
+                     int maxToolRounds, int maxInputTokens) {
+        this.llmProvider = llmProvider;
+        this.toolRegistry = toolRegistry;
+        this.restClient = restClient;
+        this.config = config;
+        this.maxToolRounds = maxToolRounds;
+        this.maxInputTokens = maxInputTokens;
+    }
+
+    /**
+     * Creates a new agent loop with default limits.
      *
      * @param llmProvider  the LLM provider to use for generating responses
      * @param toolRegistry the registry of available SAP tools
@@ -74,10 +97,8 @@ public class AgentLoop {
      */
     public AgentLoop(LlmProvider llmProvider, SapToolRegistry toolRegistry,
                      AdtRestClient restClient, LlmProviderConfig config) {
-        this.llmProvider = llmProvider;
-        this.toolRegistry = toolRegistry;
-        this.restClient = restClient;
-        this.config = config;
+        this(llmProvider, toolRegistry, restClient, config,
+             DEFAULT_MAX_TOOL_ROUNDS, DEFAULT_MAX_INPUT_TOKENS);
     }
 
     /**
@@ -124,7 +145,7 @@ public class AgentLoop {
 
             int cumulativeInputTokens = 0;
 
-            for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
+            for (int round = 0; round < maxToolRounds; round++) {
                 // Check for thread interruption (supports Eclipse Job cancellation)
                 if (Thread.currentThread().isInterrupted()) {
                     callback.onError(new InterruptedException("Agent loop was cancelled"));
@@ -245,9 +266,9 @@ public class AgentLoop {
                 conversation.addAssistantMessage(toolResultsMessage);
 
                 // 6. Check token budget
-                if (cumulativeInputTokens > MAX_INPUT_TOKENS) {
+                if (cumulativeInputTokens > maxInputTokens) {
                     System.err.println("AgentLoop: token budget exceeded ("
-                            + cumulativeInputTokens + " > " + MAX_INPUT_TOKENS + "), stopping.");
+                            + cumulativeInputTokens + " > " + maxInputTokens + "), stopping.");
                     callback.onError(new Exception(
                             "Token budget exceeded (" + cumulativeInputTokens + " input tokens used). "
                             + "The conversation was getting too long. Please start a new chat "
@@ -258,7 +279,7 @@ public class AgentLoop {
 
             // Maximum rounds exceeded
             callback.onError(new Exception(
-                    "Maximum tool rounds exceeded (" + MAX_TOOL_ROUNDS + "). "
+                    "Maximum tool rounds exceeded (" + maxToolRounds + "). "
                     + "The agent was unable to produce a final response within the allowed "
                     + "number of iterations. This may indicate a loop in the tool usage pattern."));
 
