@@ -22,6 +22,7 @@ import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
 import com.sap.ai.assistant.model.LlmProviderConfig;
 import com.sap.ai.assistant.sap.AdtRestClient;
+import com.sap.ai.assistant.tools.AbstractDdicSourceTool;
 import com.sap.ai.assistant.tools.AbstractSapTool;
 import com.sap.ai.assistant.tools.SapTool;
 import com.sap.ai.assistant.tools.SapToolRegistry;
@@ -345,7 +346,12 @@ public class AgentLoop {
     }
 
     private boolean isWriteTool(String name) {
-        return SetSourceTool.NAME.equals(name) || WriteAndCheckTool.NAME.equals(name);
+        if (SetSourceTool.NAME.equals(name) || WriteAndCheckTool.NAME.equals(name)) {
+            return true;
+        }
+        // Check if the tool is a DDIC/DDL write tool (AbstractDdicSourceTool subclass)
+        SapTool tool = toolRegistry.get(name);
+        return tool instanceof AbstractDdicSourceTool;
     }
 
     private String formatSyntaxMessages(com.google.gson.JsonArray messages) {

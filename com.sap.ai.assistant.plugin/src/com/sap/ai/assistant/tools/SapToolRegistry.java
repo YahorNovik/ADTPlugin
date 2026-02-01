@@ -45,6 +45,7 @@ public class SapToolRegistry {
     public SapToolRegistry(AdtRestClient client, List<SapTool> additionalTools) {
         Map<String, SapTool> map = new LinkedHashMap<>();
 
+        // Core tools
         register(map, new SearchObjectTool(client));
         register(map, new GetSourceTool(client));
         register(map, new SetSourceTool(client));
@@ -60,6 +61,27 @@ public class SapToolRegistry {
         register(map, new FindDefinitionTool(client));
         register(map, new UsageReferencesTool(client));
         register(map, new RunUnitTestTool(client));
+
+        // Priority 1: Read-only tools
+        register(map, new SqlQueryTool(client));
+        register(map, new TypeInfoTool(client));
+        register(map, new GetIncludesTool(client));
+        register(map, new GetEnhancementsTool(client));
+        register(map, new GetTransactionTool(client));
+        register(map, new InactiveObjectsTool(client));
+
+        // Priority 2: DDIC write tools
+        register(map, new DdicTableTool(client));
+        register(map, new DdicStructureTool(client));
+        register(map, new DdicCdsViewTool(client));
+        register(map, new DdicDataElementTool(client));
+        register(map, new DdicDomainTool(client));
+
+        // Priority 3: RAP/Modern tools
+        register(map, new ServiceDefinitionTool(client));
+        register(map, new BehaviorDefinitionTool(client));
+        register(map, new MetadataExtensionTool(client));
+        register(map, new CreateTransportTool(client));
 
         for (SapTool tool : additionalTools) {
             register(map, tool);

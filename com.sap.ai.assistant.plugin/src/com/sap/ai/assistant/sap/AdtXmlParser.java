@@ -840,6 +840,202 @@ public final class AdtXmlParser {
     }
 
     // ---------------------------------------------------------------
+    // Data preview (SQL query results)
+    // ---------------------------------------------------------------
+
+    /**
+     * Parse a data preview response from
+     * {@code POST /sap/bc/adt/datapreview/freestyle}.
+     *
+     * <p>The response contains metadata (column definitions) and
+     * column-oriented data.</p>
+     *
+     * @param xml raw XML string
+     * @return JsonObject with totalRows, executionTime, columns array
+     */
+    public static JsonObject parseDataPreview(String xml) {
+        JsonObject result = new JsonObject();
+        result.addProperty("totalRows", 0);
+        result.addProperty("executionTime", "");
+        JsonArray columns = new JsonArray();
+        result.add("columns", columns);
+
+        if (isBlank(xml)) {
+            return result;
+        }
+
+        try {
+            Document doc = parseDocument(xml);
+            Element root = doc.getDocumentElement();
+
+            // Total rows
+            NodeList totalRowsNodes = doc.getElementsByTagName("dataPreview:totalRows");
+            if (totalRowsNodes.getLength() == 0) {
+                totalRowsNodes = doc.getElementsByTagName("totalRows");
+            }
+            if (totalRowsNodes.getLength() > 0) {
+                try {
+                    result.addProperty("totalRows",
+                            Integer.parseInt(totalRowsNodes.item(0).getTextContent().trim()));
+                } catch (NumberFormatException e) {
+                    // ignore
+                }
+            }
+
+            // Execution time
+            NodeList execTimeNodes = doc.getElementsByTagName("dataPreview:queryExecutionTime");
+            if (execTimeNodes.getLength() == 0) {
+                execTimeNodes = doc.getElementsByTagName("queryExecutionTime");
+            }
+            if (execTimeNodes.getLength() > 0) {
+                result.addProperty("executionTime",
+                        execTimeNodes.item(0).getTextContent().trim());
+            }
+
+            // Metadata: column names and types
+            NodeList metadataColumns = doc.getElementsByTagName("dataPreview:metadata");
+            if (metadataColumns.getLength() == 0) {
+                metadataColumns = doc.getElementsByTagName("metadata");
+            }
+            java.util.List<String> columnNames = new java.util.ArrayList<>();
+            if (metadataColumns.getLength() > 0) {
+                Element metadata = (Element) metadataColumns.item(0);
+                NodeList colDefs = metadata.getElementsByTagName("dataPreview:column");
+                if (colDefs.getLength() == 0) {
+                    colDefs = metadata.getElementsByTagName("column");
+                }
+                for (int i = 0; i < colDefs.getLength(); i++) {
+                    Element col = (Element) colDefs.item(i);
+                    String name = attr(col, "name", attr(col, "dataPreview:name", "col_" + i));
+                    String type = attr(col, "type", attr(col, "dataPreview:type", ""));
+                    columnNames.add(name);
+
+                    JsonObject colObj = new JsonObject();
+                    colObj.addProperty("name", name);
+                    colObj.addProperty("type", type);
+                    colObj.add("values", new JsonArray());
+                    columns.add(colObj);
+                }
+            }
+
+            // Data: column values
+            NodeList dataColumns = doc.getElementsByTagName("dataPreview:columns");
+            if (dataColumns.getLength() == 0) {
+                dataColumns = doc.getElementsByTagName("columns");
+            }
+            if (dataColumns.getLength() > 0) {
+                Element dataRoot = (Element) dataColumns.item(0);
+                NodeList dataCols = dataRoot.getElementsByTagName("dataPreview:dataColumn");
+                if (dataCols.getLength() == 0) {
+                    dataCols = dataRoot.getElementsByTagName("dataColumn");
+                }
+                for (int i = 0; i < dataCols.getLength() && i < columns.size(); i++) {
+                    Element dataCol = (Element) dataCols.item(i);
+                    JsonArray values = columns.get(i).getAsJsonObject().getAsJsonArray("values");
+                    NodeList entries = dataCol.getElementsByTagName("dataPreview:data");
+                    if (entries.getLength() == 0) {
+                        entries = dataCol.getElementsByTagName("data");
+                    }
+                    for (int j = 0; j < entries.getLength(); j++) {
+                        values.add(entries.item(j).getTextContent());
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            System.err.println("AdtXmlParser.parseDataPreview failed: " + e.getMessage());
+        }
+
+        return result;
+    }
+
+    // ---------------------------------------------------------------
+    // Inactive objects
+    // ---------------------------------------------------------------
+
+    /**
+     * Parse the inactive objects response from
+     * {@code GET /sap/bc/adt/activation/inactiveobjects}.
+     *
+     * @param xml raw XML string
+     * @return JsonObject with "objects" array, each with name, type, uri
+     */
+    public static JsonObject parseInactiveObjects(String xml) {
+        JsonObject result = new JsonObject();
+        JsonArray objects = new JsonArray();
+        result.add("objects", objects);
+
+        if (isBlank(xml)) {
+            return result;
+        }
+
+        try {
+            Document doc = parseDocument(xml);
+
+            // Try <ioc:entry> elements first
+            NodeList entries = doc.getElementsByTagName("ioc:entry");
+            if (entries.getLength() == 0) {
+                entries = doc.getElementsByTagName("entry");
+            }
+
+            for (int i = 0; i < entries.getLength(); i++) {
+                Element entry = (Element) entries.item(i);
+                JsonObject obj = new JsonObject();
+
+                // Look for objectReference inside entry
+                NodeList refs = entry.getElementsByTagName("ioc:objectReference");
+                if (refs.getLength() == 0) {
+                    refs = entry.getElementsByTagNameNS(NS_ADT_CORE, "objectReference");
+                }
+                if (refs.getLength() == 0) {
+                    refs = entry.getElementsByTagName("objectReference");
+                }
+
+                if (refs.getLength() > 0) {
+                    Element ref = (Element) refs.item(0);
+                    obj.addProperty("name", attr(ref, "adtcore:name", attr(ref, "name", "")));
+                    obj.addProperty("type", attr(ref, "adtcore:type", attr(ref, "type", "")));
+                    obj.addProperty("uri", attr(ref, "adtcore:uri", attr(ref, "uri", "")));
+                } else {
+                    // Fallback: attributes on entry itself
+                    obj.addProperty("name", attr(entry, "adtcore:name", attr(entry, "name", "")));
+                    obj.addProperty("type", attr(entry, "adtcore:type", attr(entry, "type", "")));
+                    obj.addProperty("uri", attr(entry, "adtcore:uri", attr(entry, "uri", "")));
+                }
+
+                String name = obj.get("name").getAsString();
+                if (!name.isEmpty()) {
+                    objects.add(obj);
+                }
+            }
+
+            // Also try standalone objectReference elements
+            if (objects.size() == 0) {
+                NodeList refs = doc.getElementsByTagNameNS(NS_ADT_CORE, "objectReference");
+                if (refs.getLength() == 0) {
+                    refs = doc.getElementsByTagName("objectReference");
+                }
+                for (int i = 0; i < refs.getLength(); i++) {
+                    Element ref = (Element) refs.item(i);
+                    JsonObject obj = new JsonObject();
+                    obj.addProperty("name", attr(ref, "adtcore:name", attr(ref, "name", "")));
+                    obj.addProperty("type", attr(ref, "adtcore:type", attr(ref, "type", "")));
+                    obj.addProperty("uri", attr(ref, "adtcore:uri", attr(ref, "uri", "")));
+                    String name = obj.get("name").getAsString();
+                    if (!name.isEmpty()) {
+                        objects.add(obj);
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            System.err.println("AdtXmlParser.parseInactiveObjects failed: " + e.getMessage());
+        }
+
+        return result;
+    }
+
+    // ---------------------------------------------------------------
     // Internal XML helpers
     // ---------------------------------------------------------------
 
