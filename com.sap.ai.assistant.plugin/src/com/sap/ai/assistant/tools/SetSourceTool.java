@@ -136,10 +136,56 @@ public class SetSourceTool extends AbstractSapTool {
             JsonObject output = new JsonObject();
             output.addProperty("status", "success");
             output.addProperty("statusCode", response.statusCode());
+
+            // Activate after successful write
+            String objectUrl = sourceUrl;
+            if (objectUrl.endsWith("/source/main")) {
+                objectUrl = objectUrl.substring(0, objectUrl.length() - "/source/main".length());
+            }
+            String objectName = extractObjectName(objectUrl);
+            try {
+                String activateXml = "<adtcore:objectReferences xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+                        + "<adtcore:objectReference adtcore:uri=\"" + escapeXml(objectUrl)
+                        + "\" adtcore:name=\"" + escapeXml(objectName) + "\"/>"
+                        + "</adtcore:objectReferences>";
+
+                client.post(
+                        "/sap/bc/adt/activation?method=activate&preauditRequested=true",
+                        activateXml,
+                        "application/xml",
+                        "application/xml,application/vnd.sap.adt.inactivectsobjects.v1+xml;q=0.9");
+
+                output.addProperty("activated", true);
+            } catch (Exception e) {
+                output.addProperty("activated", false);
+                output.addProperty("activationError", e.getMessage());
+            }
+
             return ToolResult.success(null, output.toString());
         } finally {
             safeUnlock(lockUrl, lockHandle);
         }
+    }
+
+    private String extractObjectName(String objectUrl) {
+        if (objectUrl == null) return "UNKNOWN";
+        String[] parts = objectUrl.split("/");
+        for (int i = parts.length - 1; i >= 0; i--) {
+            if (!parts[i].isEmpty()) {
+                return parts[i].toUpperCase();
+            }
+        }
+        return "UNKNOWN";
+    }
+
+    private String escapeXml(String value) {
+        if (value == null) return "";
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
     }
 
     private void safeUnlock(String lockUrl, String lockHandle) {

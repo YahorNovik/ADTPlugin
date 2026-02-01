@@ -287,6 +287,29 @@ public class WriteAndCheckTool extends AbstractSapTool {
         output.addProperty("hasErrors", hasErrors);
         output.add("syntaxMessages", syntaxMessages);
 
+        // ----------------------------------------------------------
+        // Step 7: Activate if no syntax errors
+        // ----------------------------------------------------------
+        if (!hasErrors) {
+            try {
+                String activateXml = "<adtcore:objectReferences xmlns:adtcore=\"http://www.sap.com/adt/core\">"
+                        + "<adtcore:objectReference adtcore:uri=\"" + escapeXml(objectUrl)
+                        + "\" adtcore:name=\"" + escapeXml(name) + "\"/>"
+                        + "</adtcore:objectReferences>";
+
+                client.post(
+                        "/sap/bc/adt/activation?method=activate&preauditRequested=true",
+                        activateXml,
+                        "application/xml",
+                        "application/xml,application/vnd.sap.adt.inactivectsobjects.v1+xml;q=0.9");
+
+                output.addProperty("activated", true);
+            } catch (Exception e) {
+                output.addProperty("activated", false);
+                output.addProperty("activationError", e.getMessage());
+            }
+        }
+
         return ToolResult.success(null, output.toString());
     }
 
