@@ -49,6 +49,17 @@ public class LlmUsage {
         return new LlmUsage(input, output);
     }
 
+    /**
+     * Parse usage from a Google Gemini API response JSON.
+     * Expects: {@code {"promptTokenCount":N, "candidatesTokenCount":N, ...}}
+     */
+    public static LlmUsage fromGeminiJson(JsonObject usageMetadata) {
+        if (usageMetadata == null) return null;
+        int input = usageMetadata.has("promptTokenCount") ? usageMetadata.get("promptTokenCount").getAsInt() : 0;
+        int output = usageMetadata.has("candidatesTokenCount") ? usageMetadata.get("candidatesTokenCount").getAsInt() : 0;
+        return new LlmUsage(input, output);
+    }
+
     public int getInputTokens() { return inputTokens; }
     public int getOutputTokens() { return outputTokens; }
     public int getCacheCreationTokens() { return cacheCreationTokens; }

@@ -11,6 +11,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sap.ai.assistant.model.ChatMessage;
 import com.sap.ai.assistant.model.LlmProviderConfig;
+import com.sap.ai.assistant.model.LlmUsage;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
@@ -262,7 +263,14 @@ public class GeminiProvider extends AbstractLlmProvider {
             }
 
             String text = textContent.length() > 0 ? textContent.toString() : null;
-            return new ChatMessage(ChatMessage.Role.ASSISTANT, text, toolCalls, null);
+            ChatMessage msg = new ChatMessage(ChatMessage.Role.ASSISTANT, text, toolCalls, null);
+
+            // Extract token usage from usageMetadata
+            if (json.has("usageMetadata") && json.get("usageMetadata").isJsonObject()) {
+                msg.setUsage(LlmUsage.fromGeminiJson(json.getAsJsonObject("usageMetadata")));
+            }
+
+            return msg;
 
         } catch (LlmException e) {
             throw e;
