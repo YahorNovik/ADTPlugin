@@ -72,7 +72,11 @@ public class ContextBuilder {
         sb.append("**Other:**\n");
         sb.append("- `sap_transport_info` — get transport request info for an object\n");
         sb.append("- `sap_atc_run` — run ATC quality checks (only when explicitly requested)\n");
-        sb.append("- `sap_run_unit_test` — execute ABAP Unit tests for a class\n\n");
+        sb.append("- `sap_run_unit_test` — execute ABAP Unit tests for a class\n");
+        if (hasResearchTool) {
+            sb.append("- `research` — delegate a query to a research sub-agent that can search SAP documentation, ABAP keyword reference, and read object source code\n");
+        }
+        sb.append("\n");
 
         // -- Output style instruction --
         sb.append("## Response Style\n\n");
