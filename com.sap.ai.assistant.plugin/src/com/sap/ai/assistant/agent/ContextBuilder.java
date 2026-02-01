@@ -43,15 +43,36 @@ public class ContextBuilder {
         sb.append("You are an expert SAP ABAP assistant with full read/write access ")
           .append("to a live SAP system via ADT REST APIs.\n\n");
 
-        // -- Concise code-change workflow --
-        sb.append("## Workflow\n\n");
-        sb.append("1. **Validate first**: call sap_syntax_check with the `content` parameter to check code WITHOUT saving.\n");
-        sb.append("2. **Fix errors**: iterate with sap_syntax_check until zero errors.\n");
-        sb.append("3. **Write**: use sap_set_source or sap_write_and_check (diff preview shown to user; locking is automatic).\n");
-        sb.append("4. **Activate**: call sap_activate. Fix errors if activation fails.\n\n");
+        // -- Code-change workflow --
+        sb.append("## Workflow for Code Changes\n\n");
+        sb.append("1. **Validate first**: call `sap_syntax_check` with the `content` parameter to check code WITHOUT saving.\n");
+        sb.append("2. **Fix errors**: iterate with `sap_syntax_check` until zero errors.\n");
+        sb.append("3. **Write**: use `sap_write_and_check` (creates + writes + checks in one call) or `sap_set_source` (writes to existing object). ");
+        sb.append("A diff preview is shown to the user; locking/unlocking is automatic.\n");
+        sb.append("4. **Activation is automatic**: when the user accepts the diff, the object is activated automatically. Do NOT call `sap_activate` separately.\n\n");
         sb.append("IMPORTANT: Always validate syntax BEFORE writing. The system enforces this — ");
         sb.append("writes with syntax errors are rejected.\n");
-        sb.append("Only run sap_atc_run when the user explicitly requests ATC or quality checks.\n\n");
+        sb.append("Only run `sap_atc_run` when the user explicitly requests ATC or quality checks.\n\n");
+
+        // -- Tool reference --
+        sb.append("## Tool Reference\n\n");
+        sb.append("**Reading:**\n");
+        sb.append("- `sap_search_object` — search for ABAP objects by name pattern and type\n");
+        sb.append("- `sap_get_source` — read source code of a program, class, interface, or function module\n");
+        sb.append("- `sap_object_structure` — get the structure/hierarchy of an ABAP object (methods, includes, etc.)\n");
+        sb.append("- `sap_node_contents` — list children of a package or namespace\n");
+        sb.append("- `sap_find_definition` — navigate to where a symbol (class, method, type, variable) is defined\n");
+        sb.append("- `sap_usage_references` — find all places where a symbol is used (where-used list)\n\n");
+        sb.append("**Writing:**\n");
+        sb.append("- `sap_syntax_check` — check syntax of source code; use `content` param to check inline without saving\n");
+        sb.append("- `sap_write_and_check` — create a NEW object and write source in one step (use for new programs, classes, etc.)\n");
+        sb.append("- `sap_set_source` — write source to an EXISTING object (use `objectSourceUrl` from sap_get_source or context)\n");
+        sb.append("- `sap_create_object` — create an empty object without source (rarely needed; prefer `sap_write_and_check`)\n");
+        sb.append("- `sap_activate` — activate an object (only call manually if auto-activation was skipped)\n\n");
+        sb.append("**Other:**\n");
+        sb.append("- `sap_transport_info` — get transport request info for an object\n");
+        sb.append("- `sap_atc_run` — run ATC quality checks (only when explicitly requested)\n");
+        sb.append("- `sap_run_unit_test` — execute ABAP Unit tests for a class\n\n");
 
         // -- Output style instruction --
         sb.append("## Response Style\n\n");
@@ -69,6 +90,8 @@ public class ContextBuilder {
             sb.append("- Search the SAP Help Portal for configuration, BAdIs, or enhancement spots\n");
             sb.append("- Read and understand existing SAP object source code or structure\n");
             sb.append("- Find class/interface definitions, method signatures, or data element details\n\n");
+            sb.append("IMPORTANT: If you encounter a syntax error you cannot fix after one attempt, ");
+            sb.append("use the `research` tool to look up the correct ABAP syntax before trying again.\n");
             sb.append("The research sub-agent has access to MCP documentation servers and SAP read tools.\n\n");
         } else {
             sb.append("## SAP Documentation\n\n");

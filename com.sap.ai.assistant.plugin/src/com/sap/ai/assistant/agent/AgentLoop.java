@@ -23,6 +23,7 @@ import com.sap.ai.assistant.model.ToolResult;
 import com.sap.ai.assistant.model.LlmProviderConfig;
 import com.sap.ai.assistant.sap.AdtRestClient;
 import com.sap.ai.assistant.tools.AbstractSapTool;
+import com.sap.ai.assistant.tools.ActivateTool;
 import com.sap.ai.assistant.tools.SapTool;
 import com.sap.ai.assistant.tools.SapToolRegistry;
 import com.sap.ai.assistant.tools.SetSourceTool;
@@ -401,14 +402,23 @@ public class AgentLoop {
             diffRequest.awaitDecision();
 
             switch (diffRequest.getDecision()) {
-                case ACCEPTED:
-                    return ensureToolCallId(toolCall, tool.execute(args));
+                case ACCEPTED: {
+                    ToolResult writeResult = ensureToolCallId(toolCall, tool.execute(args));
+                    if (!writeResult.isError()) {
+                        writeResult = autoActivate(objectName, sourceUrl, writeResult);
+                    }
+                    return writeResult;
+                }
 
-                case EDITED:
-                    // Replace source in arguments with the edited version
+                case EDITED: {
                     JsonObject modifiedArgs = args.deepCopy();
                     modifiedArgs.addProperty("source", diffRequest.getFinalSource());
-                    return ensureToolCallId(toolCall, tool.execute(modifiedArgs));
+                    ToolResult writeResult = ensureToolCallId(toolCall, tool.execute(modifiedArgs));
+                    if (!writeResult.isError()) {
+                        writeResult = autoActivate(objectName, sourceUrl, writeResult);
+                    }
+                    return writeResult;
+                }
 
                 case REJECTED:
                     return ToolResult.success(toolCall.getId(),
@@ -427,6 +437,50 @@ public class AgentLoop {
             return ToolResult.error(toolCall.getId(),
                     "Diff approval failed: " + e.getClass().getSimpleName()
                     + " - " + e.getMessage());
+        }
+    }
+
+    /**
+     * Automatically activates an object after a successful write.
+     * Derives the object URL from the source URL and calls {@code sap_activate}.
+     * If activation fails, the write result is still returned with an appended warning.
+     *
+     * @param objectName the ABAP object name
+     * @param sourceUrl  the source URL (e.g. {@code /sap/bc/adt/programs/programs/ztest/source/main})
+     * @param writeResult the successful write result to augment
+     * @return a new ToolResult with activation status appended
+     */
+    private ToolResult autoActivate(String objectName, String sourceUrl, ToolResult writeResult) {
+        if (toolRegistry == null) return writeResult;
+
+        SapTool activateTool = toolRegistry.get(ActivateTool.NAME);
+        if (activateTool == null) return writeResult;
+
+        // Derive object URL from source URL by stripping /source/main suffix
+        String objectUrl = sourceUrl;
+        if (objectUrl.endsWith("/source/main")) {
+            objectUrl = objectUrl.substring(0, objectUrl.length() - "/source/main".length());
+        }
+
+        try {
+            JsonObject activateArgs = new JsonObject();
+            activateArgs.addProperty("objectName", objectName);
+            activateArgs.addProperty("objectUrl", objectUrl);
+
+            ToolResult activateResult = activateTool.execute(activateArgs);
+
+            String combined = writeResult.getContent();
+            if (activateResult.isError()) {
+                combined += "\n\nActivation failed: " + activateResult.getContent();
+            } else {
+                combined += "\n\nObject activated successfully.";
+            }
+            return ToolResult.success(writeResult.getToolCallId(), combined);
+        } catch (Exception e) {
+            // Activation failed but write succeeded — don't fail the overall operation
+            String combined = writeResult.getContent()
+                    + "\n\nActivation failed: " + e.getMessage();
+            return ToolResult.success(writeResult.getToolCallId(), combined);
         }
     }
 

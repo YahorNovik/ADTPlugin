@@ -128,15 +128,42 @@ public class ChatComposite extends Composite {
 
     /**
      * Append a token to the current streaming assistant message.
+     * <p>
+     * If tool-call widgets have been added after the current streaming widget,
+     * a new streaming widget is created at the bottom so that the text appears
+     * below the tool calls (not hidden above them).
+     * </p>
      *
      * @param token the text token to append
      */
     public void appendStreamToken(String token) {
-        if (isDisposed() || currentStreamingText == null || currentStreamingText.isDisposed()) {
-            return;
+        if (isDisposed()) return;
+
+        // If no streaming widget, or it's been disposed, or tool call widgets
+        // were added after it — create a fresh one at the end
+        if (currentStreamingText == null || currentStreamingText.isDisposed()
+                || !isLastMessageWidget(currentStreamingText)) {
+            // Finish the old one if it had content
+            if (currentStreamingText != null && !currentStreamingText.isDisposed()
+                    && currentStreamingText.getCharCount() > 0) {
+                MarkdownRenderer.applyMarkdownStyling(currentStreamingText);
+            }
+            currentStreamingText = messageRenderer.createAssistantMessage(messagesContainer);
+            layoutAndScroll();
         }
+
         currentStreamingText.append(token);
         scrollToBottom();
+    }
+
+    /**
+     * Returns true if the given widget is the last child in the messages container.
+     */
+    private boolean isLastMessageWidget(Control widget) {
+        if (messagesContainer == null || messagesContainer.isDisposed()) return false;
+        Control[] children = messagesContainer.getChildren();
+        if (children.length == 0) return false;
+        return children[children.length - 1] == widget;
     }
 
     /**
