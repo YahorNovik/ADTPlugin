@@ -378,10 +378,17 @@ public class AgentLoop {
             String objectName = resolveObjectName(toolCall.getName(), args);
 
             // Safety-net: validate syntax BEFORE showing diff to the user.
-            // If the code has errors, return them to the LLM without showing
-            // a diff or writing anything. The LLM should fix and retry.
+            // If the code has errors and this is sap_set_source, block the write.
+            // If this is sap_write_and_check, execute anyway so the object gets
+            // created — the tool will report syntax errors in its result and
+            // skip activation. The LLM can then fix errors using sap_set_source.
             String syntaxErrors = validateSourceBeforeWrite(sourceUrl, newSource);
             if (syntaxErrors != null) {
+                if (WriteAndCheckTool.NAME.equals(toolCall.getName())) {
+                    // Let the tool execute: it creates the object, writes source,
+                    // checks syntax, and returns hasErrors:true without activating.
+                    return executeToolDirectly(toolCall, tool);
+                }
                 return ToolResult.error(toolCall.getId(),
                         "Syntax errors detected in proposed source code. "
                         + "Fix these errors and call the write tool again:\n" + syntaxErrors);
