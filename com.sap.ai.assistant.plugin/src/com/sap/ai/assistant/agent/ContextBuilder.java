@@ -1,5 +1,6 @@
 package com.sap.ai.assistant.agent;
 
+import java.util.Collections;
 import java.util.List;
 
 import com.sap.ai.assistant.model.AdtContext;
@@ -23,18 +24,18 @@ public class ContextBuilder {
 
     /**
      * Builds the full system prompt for the agent, including the base instructions,
-     * the code-change workflow, and (when available) the current ADT editor context.
+     * the code-change workflow, and (when available) the ADT editor contexts.
      * <p>
      * Tool descriptions are NOT included in the system prompt because they are
      * already provided via the API's {@code tools} parameter. This avoids
      * duplicating ~1000 tokens of tool descriptions on every request.
      * </p>
      *
-     * @param context  the current ADT context (may be {@code null})
+     * @param contexts the list of ADT contexts to include (may be {@code null} or empty)
      * @param registry the tool registry (currently unused; kept for API compat)
      * @return the assembled system prompt
      */
-    public static String buildSystemPrompt(AdtContext context, SapToolRegistry registry) {
+    public static String buildSystemPrompt(List<AdtContext> contexts, SapToolRegistry registry) {
         StringBuilder sb = new StringBuilder();
 
         // -- Base identity --
@@ -63,17 +64,46 @@ public class ContextBuilder {
         sb.append("MCP documentation tools (prefixed with mcp_) can search SAP documentation, ");
         sb.append("ABAP keyword reference, and SAP Help Portal.\n\n");
 
-        // -- ADT context --
-        if (context != null) {
-            appendAdtContext(sb, context);
+        // -- ADT contexts --
+        if (contexts != null && !contexts.isEmpty()) {
+            if (contexts.size() == 1) {
+                sb.append("## Current Editor Context\n\n");
+                appendAdtContext(sb, contexts.get(0));
+            } else {
+                sb.append("## Editor Contexts\n\n");
+                for (int i = 0; i < contexts.size(); i++) {
+                    AdtContext ctx = contexts.get(i);
+                    if (i == 0) {
+                        sb.append("### Active Editor\n\n");
+                    } else {
+                        sb.append("### Additional Context: ")
+                          .append(ctx.getObjectName() != null ? ctx.getObjectName() : "unknown")
+                          .append("\n\n");
+                    }
+                    appendAdtContext(sb, ctx);
+                }
+            }
         }
 
         return sb.toString();
     }
 
     /**
+     * Builds the system prompt with a single ADT context.
+     *
+     * @param context  the current ADT context (may be {@code null})
+     * @param registry the tool registry (currently unused; kept for API compat)
+     * @return the assembled system prompt
+     */
+    public static String buildSystemPrompt(AdtContext context, SapToolRegistry registry) {
+        List<AdtContext> contexts = (context != null)
+                ? Collections.singletonList(context)
+                : null;
+        return buildSystemPrompt(contexts, registry);
+    }
+
+    /**
      * Convenience overload that builds the system prompt without a tool registry.
-     * Tool descriptions will be omitted.
      *
      * @param context the current ADT context (may be {@code null})
      * @return the assembled system prompt

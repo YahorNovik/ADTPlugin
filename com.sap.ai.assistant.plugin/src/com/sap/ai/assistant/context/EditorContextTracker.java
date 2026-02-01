@@ -1,8 +1,14 @@
 package com.sap.ai.assistant.context;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IPartListener2;
+import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
+import org.eclipse.ui.PlatformUI;
 
 import com.sap.ai.assistant.model.AdtContext;
 
@@ -30,6 +36,33 @@ public class EditorContextTracker implements IPartListener2 {
      */
     public AdtContext getCurrentContext() {
         return currentContext;
+    }
+
+    /**
+     * Returns an {@link AdtContext} for every open editor in the active
+     * workbench page. Must be called on the UI thread.
+     *
+     * @return list of contexts (never {@code null}; may be empty)
+     */
+    public List<AdtContext> getAllOpenContexts() {
+        List<AdtContext> contexts = new ArrayList<>();
+        try {
+            IWorkbenchPage page = PlatformUI.getWorkbench()
+                    .getActiveWorkbenchWindow().getActivePage();
+            if (page == null) return contexts;
+            for (IEditorReference ref : page.getEditorReferences()) {
+                IEditorPart editor = ref.getEditor(false);
+                if (editor != null) {
+                    AdtContext ctx = AdtEditorHelper.extractContext(editor);
+                    if (ctx != null && ctx.getObjectName() != null) {
+                        contexts.add(ctx);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Workbench may not be available
+        }
+        return contexts;
     }
 
     /**

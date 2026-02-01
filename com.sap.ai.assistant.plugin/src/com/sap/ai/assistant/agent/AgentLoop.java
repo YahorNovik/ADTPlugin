@@ -131,15 +131,14 @@ public class AgentLoop {
                     return;
                 }
 
-                // After round 0, strip source code from system prompt to save tokens
+                // After round 0, strip source code blocks from system prompt to save tokens
                 // (the LLM already has the source from the first round's context)
                 if (round == 1) {
                     String sp = conversation.getSystemPrompt();
                     if (sp != null) {
-                        int srcIdx = sp.indexOf("\n### Source Code\n");
-                        if (srcIdx >= 0) {
-                            conversation.setSystemPrompt(sp.substring(0, srcIdx) + "\n");
-                        }
+                        // Remove all ### Source Code sections (supports multiple editor contexts)
+                        sp = sp.replaceAll("(?s)\\n### Source Code\\n\\n```abap\\n.*?```\\n", "\n");
+                        conversation.setSystemPrompt(sp);
                     }
                 }
 

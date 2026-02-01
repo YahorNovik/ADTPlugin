@@ -1,6 +1,7 @@
 package com.sap.ai.assistant.ui;
 
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.custom.ScrolledComposite;
 import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.Font;
@@ -206,11 +207,32 @@ public class ToolCallWidget extends Composite {
         gd.exclude = !expanded;
 
         requestLayout();
-        // Trigger parent layout up the chain
+        // Trigger parent layout up the chain and update ScrolledComposite bounds
         Composite parent = getParent();
+        ScrolledComposite sc = null;
         while (parent != null) {
             parent.layout(true, true);
+            if (parent instanceof ScrolledComposite) {
+                sc = (ScrolledComposite) parent;
+            }
             parent = parent.getParent();
+        }
+        if (sc != null) {
+            ScrolledComposite scrolled = sc;
+            Composite content = (Composite) scrolled.getContent();
+            if (content != null && !content.isDisposed()) {
+                getDisplay().asyncExec(() -> {
+                    if (scrolled.isDisposed() || content.isDisposed()) return;
+                    scrolled.setMinSize(content.computeSize(
+                            scrolled.getClientArea().width, SWT.DEFAULT));
+                    content.layout(true, true);
+                    scrolled.layout(true, true);
+                    int maxScroll = content.getSize().y - scrolled.getClientArea().height;
+                    if (maxScroll > 0) {
+                        scrolled.setOrigin(0, maxScroll);
+                    }
+                });
+            }
         }
     }
 

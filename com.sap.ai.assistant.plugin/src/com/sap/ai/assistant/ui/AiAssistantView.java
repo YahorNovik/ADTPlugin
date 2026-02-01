@@ -185,15 +185,37 @@ public class AiAssistantView extends ViewPart {
     private void registerEditorContextTracker() {
         contextTracker = new EditorContextTracker();
         contextTracker.setOnContextChanged(() -> {
-            Display.getDefault().asyncExec(this::updateAutoFixButton);
+            Display.getDefault().asyncExec(() -> {
+                updateAutoFixButton();
+                refreshAvailableContexts();
+            });
         });
         try {
             IPartService ps = getSite().getWorkbenchWindow().getPartService();
             if (ps != null) {
                 ps.addPartListener(contextTracker);
             }
+            // Initial population of available contexts
+            Display.getDefault().asyncExec(() -> {
+                refreshAvailableContexts();
+                autoSelectActiveEditor();
+            });
         } catch (Exception e) {
             System.err.println("AiAssistantView: could not register context tracker: " + e.getMessage());
+        }
+    }
+
+    private void refreshAvailableContexts() {
+        if (contextTracker == null || chatComposite == null || chatComposite.isDisposed()) return;
+        List<AdtContext> all = contextTracker.getAllOpenContexts();
+        chatComposite.setAvailableContexts(all);
+    }
+
+    private void autoSelectActiveEditor() {
+        if (contextTracker == null || chatComposite == null || chatComposite.isDisposed()) return;
+        AdtContext active = contextTracker.getCurrentContext();
+        if (active != null && active.getObjectName() != null) {
+            chatComposite.addSelectedContext(active);
         }
     }
 
@@ -230,7 +252,6 @@ public class AiAssistantView extends ViewPart {
         String apiKey       = store.getString(PreferenceConstants.LLM_API_KEY);
         String model        = store.getString(PreferenceConstants.LLM_MODEL);
         int maxTokens       = store.getInt(PreferenceConstants.LLM_MAX_TOKENS);
-        boolean includeCtx  = store.getBoolean(PreferenceConstants.INCLUDE_CONTEXT);
 
         // Validate API key
         if (apiKey == null || apiKey.trim().isEmpty()) {
@@ -250,23 +271,8 @@ public class AiAssistantView extends ViewPart {
         LlmProviderConfig config = new LlmProviderConfig(
                 provider, apiKey, model, baseUrl, maxTokens > 0 ? maxTokens : 8192);
 
-        // Editor context
-        AdtContext editorContext = null;
-        if (includeCtx && contextTracker != null) {
-            editorContext = contextTracker.getCurrentContext();
-        }
-
-        // Update context label
-        if (editorContext != null && editorContext.getObjectName() != null) {
-            String ctxInfo = editorContext.getObjectName();
-            if (editorContext.getObjectType() != null) {
-                ctxInfo += " [" + editorContext.getObjectType() + "]";
-            }
-            if (editorContext.getCursorLine() > 0) {
-                ctxInfo += " line " + editorContext.getCursorLine();
-            }
-            chatComposite.setContextLabel("Context: " + ctxInfo);
-        }
+        // Editor contexts from the dropdown selector
+        List<AdtContext> selectedContexts = chatComposite.getSelectedContexts();
 
         // Selected SAP system — try ADT credentials before prompting for password
         SapSystemConnection selectedSystem = systemSelector.getSelectedSystem();
@@ -328,9 +334,9 @@ public class AiAssistantView extends ViewPart {
                 ? selectedSystem.getProjectName()
                 : "_default_";
 
-        // Build system prompt with editor context
-        String systemPrompt = editorContext != null
-                ? ContextBuilder.buildSystemPrompt(editorContext)
+        // Build system prompt with selected editor contexts
+        String systemPrompt = (selectedContexts != null && !selectedContexts.isEmpty())
+                ? ContextBuilder.buildSystemPrompt(selectedContexts, null)
                 : null;
 
         // Prepare the conversation
@@ -348,7 +354,7 @@ public class AiAssistantView extends ViewPart {
         final LlmProviderConfig finalConfig = config;
         final SapSystemConnection finalSystem = selectedSystem;
         final ChatConversation finalConversation = conversation;
-        final AdtContext finalEditorContext = editorContext;
+        final List<AdtContext> finalEditorContexts = selectedContexts;
         final AdtCredentialProvider.AdtSessionData finalAdtSession = adtSessionData;
 
         // Read MCP server configs
@@ -426,7 +432,7 @@ public class AiAssistantView extends ViewPart {
                     // descriptions include MCP tools
                     if (toolRegistry != null) {
                         String updatedPrompt = ContextBuilder.buildSystemPrompt(
-                                finalEditorContext, toolRegistry);
+                                finalEditorContexts, toolRegistry);
                         finalConversation.setSystemPrompt(updatedPrompt);
                     }
 
@@ -479,6 +485,7 @@ public class AiAssistantView extends ViewPart {
                                 }
                                 chatComposite.setRunning(false);
                                 updateAutoFixButton();
+                                refreshOpenEditors();
                             });
                         }
 
@@ -566,7 +573,7 @@ public class AiAssistantView extends ViewPart {
         }
         chatComposite.clearMessages();
         chatComposite.setRunning(false);
-        chatComposite.setContextLabel("");
+        chatComposite.clearContextSelections();
         systemSelector.setEnabled(true);
 
         if (usageTracker != null) {
@@ -579,6 +586,10 @@ public class AiAssistantView extends ViewPart {
         if (conversationManager != null) {
             conversationManager = new ConversationManager();
         }
+
+        // Re-populate available contexts and auto-select active editor
+        refreshAvailableContexts();
+        autoSelectActiveEditor();
     }
 
     // ==================================================================
@@ -633,6 +644,39 @@ public class AiAssistantView extends ViewPart {
         boolean isRunning = currentJob != null
                 && currentJob.getState() == Job.RUNNING;
         autoFixButton.setEnabled(!isRunning);
+    }
+
+    // ==================================================================
+    // Editor refresh
+    // ==================================================================
+
+    /**
+     * Refreshes all open editors by resetting their document providers.
+     * This picks up changes written to the SAP system by the agent,
+     * equivalent to the user pressing F5 in the editor.
+     */
+    private void refreshOpenEditors() {
+        try {
+            org.eclipse.ui.IWorkbenchPage page = getSite().getWorkbenchWindow().getActivePage();
+            if (page == null) return;
+            for (org.eclipse.ui.IEditorReference ref : page.getEditorReferences()) {
+                org.eclipse.ui.IEditorPart editor = ref.getEditor(false);
+                if (editor == null) continue;
+                try {
+                    // Try resource refresh (works for ADT project-backed editors)
+                    org.eclipse.core.resources.IResource resource =
+                            editor.getEditorInput().getAdapter(org.eclipse.core.resources.IResource.class);
+                    if (resource != null && resource.exists()) {
+                        resource.refreshLocal(
+                                org.eclipse.core.resources.IResource.DEPTH_ZERO, null);
+                    }
+                } catch (Exception e) {
+                    // Ignore per-editor refresh failures
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("AiAssistantView: editor refresh failed: " + e.getMessage());
+        }
     }
 
     // ==================================================================

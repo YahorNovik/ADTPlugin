@@ -37,7 +37,7 @@ public class ChatComposite extends Composite {
     // ---- Children ----
     private ScrolledComposite scrolledComposite;
     private Composite messagesContainer;
-    private Label contextLabel;
+    private ContextSelectorComposite contextSelector;
     private StyledText inputText;
     private Button sendButton;
     private Button stopButton;
@@ -201,14 +201,40 @@ public class ChatComposite extends Composite {
     }
 
     /**
-     * Update the context information bar.
-     *
-     * @param text context summary text (e.g. "ZTEST_CLASS.clas [line 42]")
+     * Updates the list of available contexts (all open editors) in the
+     * context selector dropdown.
      */
-    public void setContextLabel(String text) {
-        if (contextLabel != null && !contextLabel.isDisposed()) {
-            contextLabel.setText(text != null ? text : "");
-            contextLabel.requestLayout();
+    public void setAvailableContexts(java.util.List<AdtContext> contexts) {
+        if (contextSelector != null && !contextSelector.isDisposed()) {
+            contextSelector.setAvailableContexts(contexts);
+        }
+    }
+
+    /**
+     * Programmatically adds a context as selected in the selector.
+     */
+    public void addSelectedContext(AdtContext ctx) {
+        if (contextSelector != null && !contextSelector.isDisposed()) {
+            contextSelector.addContext(ctx);
+        }
+    }
+
+    /**
+     * Returns the currently selected contexts from the selector.
+     */
+    public java.util.List<AdtContext> getSelectedContexts() {
+        if (contextSelector != null && !contextSelector.isDisposed()) {
+            return contextSelector.getSelectedContexts();
+        }
+        return java.util.Collections.emptyList();
+    }
+
+    /**
+     * Clears all context selections (used on New Chat).
+     */
+    public void clearContextSelections() {
+        if (contextSelector != null && !contextSelector.isDisposed()) {
+            contextSelector.clearSelections();
         }
     }
 
@@ -303,12 +329,9 @@ public class ChatComposite extends Composite {
     }
 
     private void createContextBar() {
-        contextLabel = new Label(this, SWT.NONE);
-        contextLabel.setText("");
-        contextLabel.setForeground(getDisplay().getSystemColor(SWT.COLOR_WIDGET_NORMAL_SHADOW));
+        contextSelector = new ContextSelectorComposite(this, SWT.NONE);
         GridData cgd = new GridData(SWT.FILL, SWT.CENTER, true, false);
-        cgd.horizontalIndent = 8;
-        contextLabel.setLayoutData(cgd);
+        contextSelector.setLayoutData(cgd);
     }
 
     private void createInputArea() {
