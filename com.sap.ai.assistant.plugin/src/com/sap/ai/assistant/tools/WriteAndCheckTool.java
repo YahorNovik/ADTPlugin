@@ -42,6 +42,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
         TYPE_URL_MAP.put("CLAS/OC", "/sap/bc/adt/oo/classes");
         TYPE_URL_MAP.put("INTF/OI", "/sap/bc/adt/oo/interfaces");
         TYPE_URL_MAP.put("FUGR/F", "/sap/bc/adt/functions/groups");
+        // FUGR/FF handled dynamically in execute() (requires functionGroup)
 
         TYPE_BASE_URL_MAP.put("PROG/P", "/sap/bc/adt/programs/programs/");
         TYPE_BASE_URL_MAP.put("CLAS/OC", "/sap/bc/adt/oo/classes/");
@@ -63,7 +64,8 @@ public class WriteAndCheckTool extends AbstractSapTool {
         JsonObject objtypeProp = new JsonObject();
         objtypeProp.addProperty("type", "string");
         objtypeProp.addProperty("description",
-                "ADT object type code: 'PROG/P' (program), 'CLAS/OC' (class), 'INTF/OI' (interface), 'FUGR/F' (function group)");
+                "ADT object type code: 'PROG/P' (program), 'CLAS/OC' (class), 'INTF/OI' (interface), "
+                        + "'FUGR/F' (function group), 'FUGR/FF' (function module — requires functionGroup)");
 
         JsonObject nameProp = new JsonObject();
         nameProp.addProperty("type", "string");
@@ -95,6 +97,12 @@ public class WriteAndCheckTool extends AbstractSapTool {
         transportProp.addProperty("description",
                 "Optional transport request number");
 
+        JsonObject functionGroupProp = new JsonObject();
+        functionGroupProp.addProperty("type", "string");
+        functionGroupProp.addProperty("description",
+                "Required for FUGR/FF (function module): name of the parent function group "
+                        + "(e.g. 'ZCSV_UTILS'). The function module will be created inside this group.");
+
         JsonObject properties = new JsonObject();
         properties.add("objtype", objtypeProp);
         properties.add("name", nameProp);
@@ -103,6 +111,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
         properties.add("description", descProp);
         properties.add("source", sourceProp);
         properties.add("transport", transportProp);
+        properties.add("functionGroup", functionGroupProp);
 
         JsonArray required = new JsonArray();
         required.add("objtype");
@@ -118,7 +127,8 @@ public class WriteAndCheckTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Search/create object, write source, and syntax check — all in one call.",
+                "Search/create object, write source, and syntax check — all in one call. "
+                        + "For function modules (FUGR/FF), the 'functionGroup' parameter is required.",
                 schema);
     }
 
@@ -131,6 +141,17 @@ public class WriteAndCheckTool extends AbstractSapTool {
         String description = arguments.get("description").getAsString();
         String source = arguments.get("source").getAsString();
         String transport = optString(arguments, "transport");
+        String functionGroup = optString(arguments, "functionGroup");
+
+        String typeUpper = objtype.toUpperCase();
+        boolean isFunctionModule = "FUGR/FF".equals(typeUpper);
+
+        // Function modules require a functionGroup parameter
+        if (isFunctionModule && (functionGroup == null || functionGroup.isEmpty())) {
+            return ToolResult.error(null,
+                    "Function modules (FUGR/FF) require the 'functionGroup' parameter "
+                            + "specifying the parent function group name (e.g. 'ZCSV_UTILS').");
+        }
 
         JsonObject output = new JsonObject();
         boolean created = false;
@@ -167,43 +188,80 @@ public class WriteAndCheckTool extends AbstractSapTool {
         // Step 2: Create if not found
         // ----------------------------------------------------------
         if (objectUrl == null || objectUrl.isEmpty()) {
-            String creationUrl = TYPE_URL_MAP.get(objtype.toUpperCase());
-            if (creationUrl == null) {
-                return ToolResult.error(null, "Unsupported object type for creation: " + objtype);
-            }
+            if (isFunctionModule) {
+                // Function module: POST to /sap/bc/adt/functions/groups/{group}/fmodules
+                String groupLower = functionGroup.toLowerCase();
+                String creationUrl = "/sap/bc/adt/functions/groups/"
+                        + urlEncode(groupLower) + "/fmodules";
 
-            String xmlBody = buildCreationXml(objtype, name, parentName, description, parentPath);
-            String createPath = creationUrl;
-            if (transport != null && !transport.isEmpty()) {
-                createPath = createPath + "?corrNr=" + urlEncode(transport);
-            }
+                String xmlBody = buildFunctionModuleXml(name, functionGroup, description);
+                String createPath = creationUrl;
+                if (transport != null && !transport.isEmpty()) {
+                    createPath = createPath + "?corrNr=" + urlEncode(transport);
+                }
 
-            try {
-                HttpResponse<String> createResp = client.post(
-                        createPath, xmlBody, "application/*", "application/*");
+                try {
+                    HttpResponse<String> createResp = client.post(
+                            createPath, xmlBody, "application/*", "application/*");
 
-                // Derive the object URL
-                String location = createResp.headers()
-                        .firstValue("Location").orElse(null);
-                if (location != null && !location.isEmpty()) {
-                    objectUrl = location;
-                } else {
-                    String baseUrl = TYPE_BASE_URL_MAP.get(objtype.toUpperCase());
-                    if (baseUrl != null) {
-                        objectUrl = baseUrl + name.toLowerCase();
+                    String location = createResp.headers()
+                            .firstValue("Location").orElse(null);
+                    if (location != null && !location.isEmpty()) {
+                        objectUrl = location;
+                    } else {
+                        objectUrl = "/sap/bc/adt/functions/groups/" + groupLower
+                                + "/fmodules/" + name.toLowerCase();
+                    }
+                    created = true;
+                } catch (java.io.IOException createEx) {
+                    String msg = createEx.getMessage() != null ? createEx.getMessage() : "";
+                    if (msg.contains("already exists") || msg.contains("HTTP 500")) {
+                        objectUrl = "/sap/bc/adt/functions/groups/" + groupLower
+                                + "/fmodules/" + name.toLowerCase();
+                    } else {
+                        throw createEx;
                     }
                 }
-                created = true;
-            } catch (java.io.IOException createEx) {
-                // If creation fails because object already exists, derive URL and continue
-                String msg = createEx.getMessage() != null ? createEx.getMessage() : "";
-                if (msg.contains("already exists") || msg.contains("HTTP 500")) {
-                    String baseUrl = TYPE_BASE_URL_MAP.get(objtype.toUpperCase());
-                    if (baseUrl != null) {
-                        objectUrl = baseUrl + name.toLowerCase();
+            } else {
+                // Standard object types
+                String creationUrl = TYPE_URL_MAP.get(typeUpper);
+                if (creationUrl == null) {
+                    return ToolResult.error(null,
+                            "Unsupported object type for creation: " + objtype
+                                    + ". For function modules use FUGR/FF with functionGroup param.");
+                }
+
+                String xmlBody = buildCreationXml(objtype, name, parentName, description, parentPath);
+                String createPath = creationUrl;
+                if (transport != null && !transport.isEmpty()) {
+                    createPath = createPath + "?corrNr=" + urlEncode(transport);
+                }
+
+                try {
+                    HttpResponse<String> createResp = client.post(
+                            createPath, xmlBody, "application/*", "application/*");
+
+                    String location = createResp.headers()
+                            .firstValue("Location").orElse(null);
+                    if (location != null && !location.isEmpty()) {
+                        objectUrl = location;
+                    } else {
+                        String baseUrl = TYPE_BASE_URL_MAP.get(typeUpper);
+                        if (baseUrl != null) {
+                            objectUrl = baseUrl + name.toLowerCase();
+                        }
                     }
-                } else {
-                    throw createEx;
+                    created = true;
+                } catch (java.io.IOException createEx) {
+                    String msg = createEx.getMessage() != null ? createEx.getMessage() : "";
+                    if (msg.contains("already exists") || msg.contains("HTTP 500")) {
+                        String baseUrl = TYPE_BASE_URL_MAP.get(typeUpper);
+                        if (baseUrl != null) {
+                            objectUrl = baseUrl + name.toLowerCase();
+                        }
+                    } else {
+                        throw createEx;
+                    }
                 }
             }
         }
@@ -424,7 +482,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
             xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\" ");
             xml.append("adtcore:uri=\"").append(escapeXml(parentPath)).append("\"/>");
             xml.append("</intf:abapInterface>");
-        } else if (typeUpper.startsWith("FUGR")) {
+        } else if ("FUGR/F".equals(typeUpper)) {
             xml.append("<group:functionGroup xmlns:group=\"http://www.sap.com/adt/functions/groups\" ");
             xml.append("xmlns:adtcore=\"http://www.sap.com/adt/core\" ");
             xml.append("adtcore:type=\"").append(escapeXml(objtype)).append("\" ");
@@ -443,6 +501,29 @@ public class WriteAndCheckTool extends AbstractSapTool {
             xml.append("</adtcore:objectReference>");
         }
 
+        return xml.toString();
+    }
+
+    /**
+     * Build the creation XML for a function module inside a function group.
+     */
+    private String buildFunctionModuleXml(String name, String functionGroup, String description) {
+        if (description != null && description.length() > 60) {
+            description = description.substring(0, 60);
+        }
+        String groupLower = functionGroup.toLowerCase();
+        StringBuilder xml = new StringBuilder();
+        xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        xml.append("<fmodule:abapFunctionModule ");
+        xml.append("xmlns:fmodule=\"http://www.sap.com/adt/functions/fmodules\" ");
+        xml.append("xmlns:adtcore=\"http://www.sap.com/adt/core\" ");
+        xml.append("adtcore:description=\"").append(escapeXml(description)).append("\" ");
+        xml.append("adtcore:name=\"").append(escapeXml(name)).append("\" ");
+        xml.append("adtcore:type=\"FUGR/FF\">");
+        xml.append("<adtcore:containerRef adtcore:name=\"").append(escapeXml(functionGroup.toUpperCase())).append("\" ");
+        xml.append("adtcore:type=\"FUGR/F\" ");
+        xml.append("adtcore:uri=\"/sap/bc/adt/functions/groups/").append(escapeXml(groupLower)).append("\"/>");
+        xml.append("</fmodule:abapFunctionModule>");
         return xml.toString();
     }
 

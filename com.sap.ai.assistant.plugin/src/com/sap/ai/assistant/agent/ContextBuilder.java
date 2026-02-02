@@ -55,6 +55,15 @@ public class ContextBuilder {
         sb.append("writes with syntax errors are rejected.\n");
         sb.append("Only run `sap_atc_run` when the user explicitly requests ATC or quality checks.\n\n");
 
+        // -- Function module workflow --
+        sb.append("## Creating Function Modules\n\n");
+        sb.append("Function modules (FUGR/FF) live inside function groups (FUGR/F). To create one:\n");
+        sb.append("1. Create the function group first (if it doesn't exist) using `sap_create_object` with objtype='FUGR/F'\n");
+        sb.append("2. Create the function module using `sap_write_and_check` or `sap_create_object` with objtype='FUGR/FF' ");
+        sb.append("AND the `functionGroup` parameter set to the parent group name\n");
+        sb.append("3. The `functionGroup` parameter is REQUIRED for FUGR/FF — without it, the tool will return an error\n");
+        sb.append("4. Source URL for function modules: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm_name}/source/main`\n\n");
+
         // -- Tool reference --
         sb.append("## Tool Reference\n\n");
         sb.append("**Reading:**\n");
@@ -72,9 +81,9 @@ public class ContextBuilder {
         sb.append("- `sap_inactive_objects` — list objects pending activation\n\n");
         sb.append("**Writing (ABAP):**\n");
         sb.append("- `sap_syntax_check` — check syntax of source code; use `content` param to check inline without saving\n");
-        sb.append("- `sap_write_and_check` — create a NEW program/class/interface and write source in one step\n");
+        sb.append("- `sap_write_and_check` — create a NEW program/class/interface/function module and write source in one step (for FUGR/FF, pass `functionGroup`)\n");
         sb.append("- `sap_set_source` — write source to an EXISTING object\n");
-        sb.append("- `sap_create_object` — create an empty object without source (rarely needed; prefer `sap_write_and_check`)\n");
+        sb.append("- `sap_create_object` — create an empty object without source (for FUGR/FF, pass `functionGroup`; prefer `sap_write_and_check`)\n");
         sb.append("- `sap_activate` — activate an object (only call manually if auto-activation was skipped)\n\n");
         sb.append("**Writing (DDIC / CDS / RAP):**\n");
         sb.append("- `sap_ddic_table` — create or update a DDIC table definition (DDL source)\n");

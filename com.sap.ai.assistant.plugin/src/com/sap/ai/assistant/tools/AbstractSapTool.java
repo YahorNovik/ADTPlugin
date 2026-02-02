@@ -124,7 +124,8 @@ public abstract class AbstractSapTool implements SapTool {
         // Known object types: append /source/main
         if (path.matches(".*/programs/programs/[^/]+")
                 || path.matches(".*/oo/classes/[^/]+")
-                || path.matches(".*/oo/interfaces/[^/]+")) {
+                || path.matches(".*/oo/interfaces/[^/]+")
+                || path.matches(".*/fmodules/[^/]+")) {
             return path + "/source/main" + query;
         }
         return normalized;
