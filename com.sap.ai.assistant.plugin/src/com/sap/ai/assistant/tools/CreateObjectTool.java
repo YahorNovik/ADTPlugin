@@ -23,6 +23,11 @@ public class CreateObjectTool extends AbstractSapTool {
      */
     private static final Map<String, String> TYPE_URL_MAP = new HashMap<>();
 
+    /**
+     * Mapping from ADT object type codes to Content-Type / Accept headers.
+     */
+    private static final Map<String, String> TYPE_CONTENT_TYPE_MAP = new HashMap<>();
+
     static {
         TYPE_URL_MAP.put("PROG/P", "/sap/bc/adt/programs/programs");
         TYPE_URL_MAP.put("CLAS/OC", "/sap/bc/adt/oo/classes");
@@ -37,6 +42,17 @@ public class CreateObjectTool extends AbstractSapTool {
         TYPE_URL_MAP.put("SHLP/SH", "/sap/bc/adt/ddic/searchhelps");
         TYPE_URL_MAP.put("MSAG/N", "/sap/bc/adt/messageclass");
         TYPE_URL_MAP.put("XSLT/XT", "/sap/bc/adt/transformations/xslt");
+
+        TYPE_CONTENT_TYPE_MAP.put("PROG/P", "application/vnd.sap.adt.programs.programs.v2+xml");
+        TYPE_CONTENT_TYPE_MAP.put("CLAS/OC", "application/vnd.sap.adt.oo.classes.v4+xml");
+        TYPE_CONTENT_TYPE_MAP.put("INTF/OI", "application/vnd.sap.adt.oo.interfaces.v5+xml");
+        TYPE_CONTENT_TYPE_MAP.put("FUGR/F", "application/vnd.sap.adt.functions.groups.v3+xml");
+        TYPE_CONTENT_TYPE_MAP.put("FUGR/FF", "application/vnd.sap.adt.functions.groups.v3+xml");
+        TYPE_CONTENT_TYPE_MAP.put("DEVC/K", "application/vnd.sap.adt.packages.v1+xml");
+        TYPE_CONTENT_TYPE_MAP.put("TABL/DT", "application/vnd.sap.adt.tables.v2+xml");
+        TYPE_CONTENT_TYPE_MAP.put("DTEL/DE", "application/vnd.sap.adt.dataelements.v2+xml");
+        TYPE_CONTENT_TYPE_MAP.put("DOMA/DO", "application/vnd.sap.adt.domains.v2+xml");
+        TYPE_CONTENT_TYPE_MAP.put("TTYP/TT", "application/vnd.sap.adt.tabletypes.v2+xml");
     }
 
     public CreateObjectTool(AdtRestClient client) {
@@ -124,6 +140,10 @@ public class CreateObjectTool extends AbstractSapTool {
                             + ". Supported types: " + TYPE_URL_MAP.keySet());
         }
 
+        // Resolve Content-Type (use type-specific or fallback)
+        String contentType = TYPE_CONTENT_TYPE_MAP.getOrDefault(
+                objtype.toUpperCase(), "application/xml");
+
         // Build the creation XML body
         String xmlBody = buildCreationXml(objtype, name, parentName, description, parentPath, transport);
 
@@ -137,8 +157,8 @@ public class CreateObjectTool extends AbstractSapTool {
             HttpResponse<String> response = client.post(
                     path,
                     xmlBody,
-                    "application/*",
-                    "application/*");
+                    contentType,
+                    contentType + ", application/xml");
 
             JsonObject output = new JsonObject();
             output.addProperty("status", "created");
@@ -179,54 +199,70 @@ public class CreateObjectTool extends AbstractSapTool {
                                      String description, String parentPath, String transport) {
         String typeUpper = objtype.toUpperCase();
 
+        // Limit description to 60 chars (SAP ADT constraint)
+        if (description != null && description.length() > 60) {
+            description = description.substring(0, 60);
+        }
+
         StringBuilder xml = new StringBuilder();
         xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
 
         if (typeUpper.startsWith("PROG")) {
             xml.append("<program:abapProgram xmlns:program=\"http://www.sap.com/adt/programs/programs\" ");
             xml.append("xmlns:adtcore=\"http://www.sap.com/adt/core\" ");
-            xml.append("adtcore:type=\"").append(escapeXml(objtype)).append("\" ");
             xml.append("adtcore:description=\"").append(escapeXml(description)).append("\" ");
-            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\">");
-            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\" ");
-            xml.append("adtcore:uri=\"").append(escapeXml(parentPath)).append("\"/>");
+            xml.append("adtcore:language=\"EN\" ");
+            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\" ");
+            xml.append("adtcore:type=\"PROG/P\" ");
+            xml.append("adtcore:masterLanguage=\"EN\">");
+            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\"/>");
             xml.append("</program:abapProgram>");
+
         } else if (typeUpper.startsWith("CLAS")) {
             xml.append("<class:abapClass xmlns:class=\"http://www.sap.com/adt/oo/classes\" ");
             xml.append("xmlns:adtcore=\"http://www.sap.com/adt/core\" ");
-            xml.append("adtcore:type=\"").append(escapeXml(objtype)).append("\" ");
             xml.append("adtcore:description=\"").append(escapeXml(description)).append("\" ");
-            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\">");
-            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\" ");
-            xml.append("adtcore:uri=\"").append(escapeXml(parentPath)).append("\"/>");
-            xml.append("<class:include class:includeType=\"testclasses\" adtcore:type=\"CLAS/OC\"/>");
+            xml.append("adtcore:language=\"EN\" ");
+            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\" ");
+            xml.append("adtcore:type=\"CLAS/OC\" ");
+            xml.append("adtcore:masterLanguage=\"EN\" ");
+            xml.append("class:final=\"true\" ");
+            xml.append("class:visibility=\"public\">");
+            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\"/>");
+            xml.append("<class:include adtcore:name=\"CLAS/OC\" adtcore:type=\"CLAS/OC\" class:includeType=\"testclasses\"/>");
             xml.append("</class:abapClass>");
+
         } else if (typeUpper.startsWith("INTF")) {
             xml.append("<intf:abapInterface xmlns:intf=\"http://www.sap.com/adt/oo/interfaces\" ");
             xml.append("xmlns:adtcore=\"http://www.sap.com/adt/core\" ");
-            xml.append("adtcore:type=\"").append(escapeXml(objtype)).append("\" ");
             xml.append("adtcore:description=\"").append(escapeXml(description)).append("\" ");
-            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\">");
-            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\" ");
-            xml.append("adtcore:uri=\"").append(escapeXml(parentPath)).append("\"/>");
+            xml.append("adtcore:language=\"EN\" ");
+            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\" ");
+            xml.append("adtcore:type=\"INTF/OI\" ");
+            xml.append("adtcore:masterLanguage=\"EN\">");
+            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\"/>");
             xml.append("</intf:abapInterface>");
+
         } else if (typeUpper.startsWith("FUGR")) {
-            xml.append("<group:functionGroup xmlns:group=\"http://www.sap.com/adt/functions/groups\" ");
+            xml.append("<group:abapFunctionGroup xmlns:group=\"http://www.sap.com/adt/functions/groups\" ");
             xml.append("xmlns:adtcore=\"http://www.sap.com/adt/core\" ");
-            xml.append("adtcore:type=\"").append(escapeXml(objtype)).append("\" ");
             xml.append("adtcore:description=\"").append(escapeXml(description)).append("\" ");
-            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\">");
-            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\" ");
-            xml.append("adtcore:uri=\"").append(escapeXml(parentPath)).append("\"/>");
-            xml.append("</group:functionGroup>");
+            xml.append("adtcore:language=\"EN\" ");
+            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\" ");
+            xml.append("adtcore:type=\"FUGR/F\" ");
+            xml.append("adtcore:masterLanguage=\"EN\">");
+            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\"/>");
+            xml.append("</group:abapFunctionGroup>");
+
         } else {
-            // Generic creation XML for other types
+            // Generic creation XML for other types (DDIC, packages, etc.)
             xml.append("<adtcore:objectReference xmlns:adtcore=\"http://www.sap.com/adt/core\" ");
             xml.append("adtcore:type=\"").append(escapeXml(objtype)).append("\" ");
             xml.append("adtcore:description=\"").append(escapeXml(description)).append("\" ");
-            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\">");
-            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\" ");
-            xml.append("adtcore:uri=\"").append(escapeXml(parentPath)).append("\"/>");
+            xml.append("adtcore:language=\"EN\" ");
+            xml.append("adtcore:name=\"").append(escapeXml(name)).append("\" ");
+            xml.append("adtcore:masterLanguage=\"EN\">");
+            xml.append("<adtcore:packageRef adtcore:name=\"").append(escapeXml(parentName)).append("\"/>");
             xml.append("</adtcore:objectReference>");
         }
 
