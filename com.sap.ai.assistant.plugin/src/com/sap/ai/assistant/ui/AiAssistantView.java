@@ -43,6 +43,8 @@ import com.sap.ai.assistant.model.UsageTracker;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
+import com.sap.ai.assistant.model.TransportSelection;
+import com.sap.ai.assistant.model.TransportSelectionRequest;
 import com.sap.ai.assistant.preferences.PreferenceConstants;
 import com.sap.ai.assistant.sap.AdtCredentialProvider;
 import com.sap.ai.assistant.sap.AdtRestClient;
@@ -81,6 +83,8 @@ public class AiAssistantView extends ViewPart {
     private ConversationManager conversationManager;
     private Job currentJob;
     private UsageTracker usageTracker;
+    /** Session-level transport selection; {@code null} until first write op. */
+    private TransportSelection sessionTransport;
 
     // ==================================================================
     // ViewPart lifecycle
@@ -470,13 +474,15 @@ public class AiAssistantView extends ViewPart {
                         toolRegistry = SapToolRegistry.withToolsOnly(mainAdditionalTools);
                     }
 
-                    // Rebuild system prompt with research tool awareness
+                    // Rebuild system prompt with research tool awareness + transport info
                     String updatedPrompt = ContextBuilder.buildSystemPrompt(
-                            finalEditorContexts, toolRegistry, hasResearchTool);
+                            finalEditorContexts, toolRegistry, hasResearchTool,
+                            sessionTransport);
                     finalConversation.setSystemPrompt(updatedPrompt);
 
                     // Create and run agent loop (pass restClient for diff preview)
                     AgentLoop agent = new AgentLoop(llmProvider, toolRegistry, restClient, finalConfig);
+                    agent.setSessionTransport(sessionTransport);
 
                     agent.run(finalConversation, new AgentCallback() {
 
@@ -506,6 +512,25 @@ public class AiAssistantView extends ViewPart {
                             }
                             // Show diff widget in UI; agent thread blocks on awaitDecision()
                             display.asyncExec(() -> chatComposite.addDiffPreview(diffRequest));
+                        }
+
+                        @Override
+                        public void onTransportSelectionNeeded(TransportSelectionRequest request) {
+                            if (monitor.isCanceled()) {
+                                request.setSelection(TransportSelection.local());
+                                return;
+                            }
+                            display.asyncExec(() -> {
+                                TransportSelectionDialog dialog = new TransportSelectionDialog(
+                                        chatComposite.getShell(),
+                                        request.getAvailableTransports());
+                                if (dialog.open() == org.eclipse.jface.window.Window.OK
+                                        && dialog.getResult() != null) {
+                                    request.setSelection(dialog.getResult());
+                                } else {
+                                    request.setSelection(TransportSelection.local());
+                                }
+                            });
                         }
 
                         @Override
@@ -549,6 +574,9 @@ public class AiAssistantView extends ViewPart {
                             });
                         }
                     });
+
+                    // Persist transport selection for subsequent messages
+                    sessionTransport = agent.getSessionTransport();
 
                     if (monitor.isCanceled()) {
                         return Status.CANCEL_STATUS;
@@ -614,6 +642,7 @@ public class AiAssistantView extends ViewPart {
         chatComposite.setRunning(false);
         chatComposite.clearContextSelections();
         systemSelector.setEnabled(true);
+        sessionTransport = null;
 
         if (usageTracker != null) {
             usageTracker.clear();

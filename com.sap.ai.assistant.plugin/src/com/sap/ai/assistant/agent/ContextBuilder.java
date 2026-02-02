@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.sap.ai.assistant.model.AdtContext;
 import com.sap.ai.assistant.model.ToolDefinition;
+import com.sap.ai.assistant.model.TransportSelection;
 import com.sap.ai.assistant.tools.SapToolRegistry;
 
 /**
@@ -148,6 +149,36 @@ public class ContextBuilder {
      */
     public static String buildSystemPrompt(List<AdtContext> contexts, SapToolRegistry registry) {
         return buildSystemPrompt(contexts, registry, false);
+    }
+
+    /**
+     * Builds the full system prompt including transport session info.
+     */
+    public static String buildSystemPrompt(List<AdtContext> contexts, SapToolRegistry registry,
+                                              boolean hasResearchTool,
+                                              TransportSelection transport) {
+        String base = buildSystemPrompt(contexts, registry, hasResearchTool);
+        return base + buildTransportSection(transport);
+    }
+
+    /**
+     * Builds the system prompt section that tells the LLM about the active
+     * transport selection so it does not ask the user about transports.
+     */
+    static String buildTransportSection(TransportSelection transport) {
+        if (transport == null) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n## Active Transport\n\n");
+        if (transport.isLocal()) {
+            sb.append("All objects will be saved as LOCAL ($TMP). ");
+            sb.append("Do NOT ask the user about transport requests. ");
+            sb.append("Always use parentName='$TMP' and parentPath='/sap/bc/adt/packages/%24tmp'.\n");
+        } else {
+            sb.append("Transport request: ").append(transport.getTransportNumber()).append("\n");
+            sb.append("Always include transport='").append(transport.getTransportNumber())
+              .append("' when creating or modifying objects. Do NOT ask the user about transports.\n");
+        }
+        return sb.toString();
     }
 
     /**

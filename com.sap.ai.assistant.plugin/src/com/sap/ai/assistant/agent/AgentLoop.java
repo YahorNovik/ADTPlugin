@@ -20,10 +20,15 @@ import com.sap.ai.assistant.model.RequestLogEntry;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
+import com.sap.ai.assistant.model.TransportSelection;
+import com.sap.ai.assistant.model.TransportSelectionRequest;
+import com.sap.ai.assistant.model.TransportSelectionRequest.TransportEntry;
 import com.sap.ai.assistant.model.LlmProviderConfig;
 import com.sap.ai.assistant.sap.AdtRestClient;
+import com.sap.ai.assistant.sap.AdtXmlParser;
 import com.sap.ai.assistant.tools.AbstractDdicSourceTool;
 import com.sap.ai.assistant.tools.AbstractSapTool;
+import com.sap.ai.assistant.tools.CreateObjectTool;
 import com.sap.ai.assistant.tools.SapTool;
 import com.sap.ai.assistant.tools.SapToolRegistry;
 import com.sap.ai.assistant.tools.SetSourceTool;
@@ -66,6 +71,13 @@ public class AgentLoop {
     private final LlmProviderConfig config;
     private final int maxToolRounds;
     private final int maxInputTokens;
+
+    /**
+     * Session-level transport selection. Set by the view before running and
+     * persisted back after the loop completes. {@code null} means the user
+     * has not yet been prompted.
+     */
+    private TransportSelection sessionTransport;
 
     /**
      * Creates a new agent loop with custom limits.
@@ -313,6 +325,17 @@ public class AgentLoop {
             return ToolResult.error(toolCall.getId(),
                     "Unknown tool: '" + toolName + "'. "
                     + "Please use one of the available tools.");
+        }
+
+        // Resolve transport for create/write tools (prompts user on first call)
+        if (restClient != null && isCreateOrWriteTool(toolName, tool)) {
+            try {
+                resolveTransportIfNeeded(toolCall, callback);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return ToolResult.error(toolCall.getId(),
+                        "Transport selection was cancelled.");
+            }
         }
 
         // Intercept write tools for diff approval
@@ -584,6 +607,138 @@ public class AgentLoop {
         return null;
     }
 
+    // ---------------------------------------------------------------
+    // Transport resolution
+    // ---------------------------------------------------------------
+
+    /**
+     * Returns {@code true} for tools that create or modify ABAP objects
+     * and therefore need a transport (or local $TMP) decision.
+     * Excludes {@code sap_create_transport} which creates transports themselves.
+     */
+    private boolean isCreateOrWriteTool(String name, SapTool tool) {
+        if (CreateObjectTool.NAME.equals(name)
+                || WriteAndCheckTool.NAME.equals(name)
+                || SetSourceTool.NAME.equals(name)) {
+            return true;
+        }
+        return tool instanceof AbstractDdicSourceTool;
+    }
+
+    /**
+     * Ensures a transport selection exists for the session. On first call,
+     * prompts the user via the callback. Subsequent calls inject the
+     * previously chosen transport into the tool arguments.
+     */
+    private void resolveTransportIfNeeded(ToolCall toolCall, AgentCallback callback)
+            throws InterruptedException {
+        if (sessionTransport != null) {
+            injectTransport(toolCall);
+            return;
+        }
+
+        // Fetch open transports from SAP
+        List<TransportEntry> transports = fetchOpenTransports();
+
+        // Build request and notify UI
+        JsonObject args = toolCall.getArguments();
+        String objName = resolveObjectName(toolCall.getName(), args);
+        String objType = args != null && args.has("objtype")
+                ? args.get("objtype").getAsString() : "";
+
+        TransportSelectionRequest request = new TransportSelectionRequest(
+                objName, objType, transports);
+
+        callback.onTransportSelectionNeeded(request);
+        request.awaitSelection();
+
+        sessionTransport = request.getSelection();
+        if (sessionTransport == null) {
+            sessionTransport = TransportSelection.local();
+        }
+
+        // If user chose "Create New Transport", create it now
+        if (sessionTransport.getMode() == TransportSelection.Mode.NEW_TRANSPORT) {
+            String newTrNumber = createNewTransport(sessionTransport.getNewTransportDescription());
+            if (newTrNumber != null && !newTrNumber.isEmpty()) {
+                sessionTransport = TransportSelection.withTransport(newTrNumber);
+            } else {
+                // Failed to create transport — fall back to local
+                sessionTransport = TransportSelection.local();
+            }
+        }
+
+        injectTransport(toolCall);
+    }
+
+    /**
+     * Modifies tool call arguments in-place to include the session transport.
+     */
+    private void injectTransport(ToolCall toolCall) {
+        if (sessionTransport == null) return;
+        JsonObject args = toolCall.getArguments();
+        if (args == null) return;
+        String toolName = toolCall.getName();
+
+        if (sessionTransport.isLocal()) {
+            args.remove("transport");
+            if (!SetSourceTool.NAME.equals(toolName)) {
+                args.addProperty("parentName", "$TMP");
+                args.addProperty("parentPath", "/sap/bc/adt/packages/%24tmp");
+            }
+        } else {
+            args.addProperty("transport", sessionTransport.getTransportNumber());
+        }
+    }
+
+    /**
+     * Fetches open transport requests for the current user from SAP.
+     */
+    private List<TransportEntry> fetchOpenTransports() {
+        if (restClient == null) return Collections.emptyList();
+        try {
+            String user = restClient.getUsername();
+            String url = "/sap/bc/adt/cts/transportrequests?user="
+                    + java.net.URLEncoder.encode(user, "UTF-8") + "&status=D";
+            java.net.http.HttpResponse<String> resp = restClient.get(url, "application/xml");
+            if (resp.statusCode() >= 200 && resp.statusCode() < 300) {
+                return AdtXmlParser.parseTransportList(resp.body());
+            }
+        } catch (Exception e) {
+            System.err.println("AgentLoop: failed to fetch open transports: " + e.getMessage());
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Creates a new transport request via the SAP CTS API.
+     *
+     * @return the transport number, or {@code null} on failure
+     */
+    private String createNewTransport(String description) {
+        if (restClient == null || description == null) return null;
+        try {
+            SapTool transportTool = toolRegistry != null
+                    ? toolRegistry.get("sap_create_transport") : null;
+            if (transportTool != null) {
+                JsonObject createArgs = new JsonObject();
+                createArgs.addProperty("description", description);
+                createArgs.addProperty("type", "K");
+                ToolResult result = transportTool.execute(createArgs);
+                if (result != null && !result.isError()) {
+                    JsonObject json = com.google.gson.JsonParser
+                            .parseString(result.getContent()).getAsJsonObject();
+                    if (json.has("transportNumber")) {
+                        return json.get("transportNumber").getAsString();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("AgentLoop: failed to create transport: " + e.getMessage());
+        }
+        return null;
+    }
+
     private long getRequestDurationMs(long fallbackStartMs) {
         if (llmProvider instanceof AbstractLlmProvider) {
             return ((AbstractLlmProvider) llmProvider).getLastRequestDurationMs();
@@ -695,5 +850,23 @@ public class AgentLoop {
      */
     public SapToolRegistry getToolRegistry() {
         return toolRegistry;
+    }
+
+    /**
+     * Sets the session-level transport selection. Called by the view
+     * before running the loop to carry over transport state from a
+     * previous message.
+     */
+    public void setSessionTransport(TransportSelection transport) {
+        this.sessionTransport = transport;
+    }
+
+    /**
+     * Returns the session-level transport selection (possibly updated
+     * during this loop run). The view should persist this for the next
+     * message.
+     */
+    public TransportSelection getSessionTransport() {
+        return sessionTransport;
     }
 }

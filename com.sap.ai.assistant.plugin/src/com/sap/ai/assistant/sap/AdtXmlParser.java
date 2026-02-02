@@ -1036,6 +1036,55 @@ public final class AdtXmlParser {
     }
 
     // ---------------------------------------------------------------
+    // Transport request list
+    // ---------------------------------------------------------------
+
+    /**
+     * Parse a transport request list response from
+     * {@code GET /sap/bc/adt/cts/transportrequests}.
+     *
+     * <p>The response contains {@code <tm:request>} elements with
+     * attributes: {@code tm:number}, {@code tm:desc}, {@code tm:type},
+     * {@code tm:status}.</p>
+     *
+     * @param xml raw XML string
+     * @return list of transport entries with number and description
+     */
+    public static java.util.List<com.sap.ai.assistant.model.TransportSelectionRequest.TransportEntry> parseTransportList(String xml) {
+        java.util.List<com.sap.ai.assistant.model.TransportSelectionRequest.TransportEntry> entries = new java.util.ArrayList<>();
+        if (isBlank(xml)) {
+            return entries;
+        }
+
+        try {
+            Document doc = parseDocument(xml);
+
+            // Look for <tm:request> elements
+            NodeList requests = doc.getElementsByTagName("tm:request");
+            if (requests.getLength() == 0) {
+                requests = doc.getElementsByTagName("request");
+            }
+
+            for (int i = 0; i < requests.getLength(); i++) {
+                Element req = (Element) requests.item(i);
+                String number = attr(req, "tm:number", attr(req, "number", ""));
+                String desc = attr(req, "tm:desc", attr(req, "desc",
+                        attr(req, "description", "")));
+
+                if (!number.isEmpty()) {
+                    entries.add(new com.sap.ai.assistant.model.TransportSelectionRequest.TransportEntry(
+                            number, desc));
+                }
+            }
+
+        } catch (Exception e) {
+            System.err.println("AdtXmlParser.parseTransportList failed: " + e.getMessage());
+        }
+
+        return entries;
+    }
+
+    // ---------------------------------------------------------------
     // Internal XML helpers
     // ---------------------------------------------------------------
 

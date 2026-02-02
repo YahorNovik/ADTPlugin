@@ -5,6 +5,8 @@ import com.sap.ai.assistant.model.DiffRequest;
 import com.sap.ai.assistant.model.RequestLogEntry;
 import com.sap.ai.assistant.model.ToolCall;
 import com.sap.ai.assistant.model.ToolResult;
+import com.sap.ai.assistant.model.TransportSelection;
+import com.sap.ai.assistant.model.TransportSelectionRequest;
 
 /**
  * Callback interface for observing the progress of an {@link AgentLoop} execution.
@@ -73,6 +75,25 @@ public interface AgentCallback {
      */
     default void onRequestComplete(RequestLogEntry entry) {
         // Default no-op so existing implementations don't break
+    }
+
+    /**
+     * Called when a create/write tool is about to execute and the session
+     * transport has not yet been determined. The implementation MUST
+     * eventually call {@link TransportSelectionRequest#setSelection} to
+     * unblock the agent loop.
+     * <p>
+     * This method is called on the agent loop thread. Implementations should
+     * dispatch UI work via {@code Display.asyncExec()} and let this method
+     * return immediately -- the agent loop will block on
+     * {@link TransportSelectionRequest#awaitSelection()}.
+     * </p>
+     *
+     * @param request the transport selection request details
+     */
+    default void onTransportSelectionNeeded(TransportSelectionRequest request) {
+        // Default: auto-select local to avoid blocking if callback isn't implemented
+        request.setSelection(TransportSelection.local());
     }
 
     /**
