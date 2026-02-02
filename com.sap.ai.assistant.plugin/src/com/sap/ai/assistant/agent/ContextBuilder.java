@@ -68,6 +68,15 @@ public class ContextBuilder {
         // via the API's `tools` parameter. Listing them here would duplicate
         // ~800-1000 tokens on every request.
 
+        // -- Think before acting --
+        sb.append("## Think Before Acting\n\n");
+        sb.append("Before making any tool calls, briefly outline your approach in 1-3 sentences:\n");
+        sb.append("- What objects need to be read, created, or modified\n");
+        sb.append("- What order you will do it in and why\n");
+        sb.append("- Any dependencies between steps (e.g. function group before function module)\n\n");
+        sb.append("This helps the user understand your plan and catch mistakes early. ");
+        sb.append("For simple single-object tasks (read source, check syntax), a one-sentence summary is enough.\n\n");
+
         // -- Output style instruction --
         sb.append("## Response Style\n\n");
         sb.append("Do NOT include full source code in your text responses. ");
