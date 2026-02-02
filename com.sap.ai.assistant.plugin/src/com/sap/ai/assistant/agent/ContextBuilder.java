@@ -66,20 +66,17 @@ public class ContextBuilder {
 
         // -- Function module source format --
         sb.append("## Function Module Source Format\n\n");
-        sb.append("When writing source code for function modules, use ONLY the modern format:\n");
-        sb.append("```\nFUNCTION z_my_func.\n");
-        sb.append("*\"----------------------------------------------------------------------\n");
-        sb.append("*\" IMPORTING\n");
-        sb.append("*\"   VALUE(IV_PARAM) TYPE STRING\n");
-        sb.append("*\" EXPORTING\n");
-        sb.append("*\"   VALUE(EV_RESULT) TYPE STRING\n");
-        sb.append("*\"----------------------------------------------------------------------\n");
-        sb.append("  \" ... function body ...\n");
+        sb.append("CRITICAL: NEVER use `*\"` comment lines in function module source. ");
+        sb.append("Any line starting with `*\"` causes 'Parameter comment blocks are not allowed' errors.\n\n");
+        sb.append("Define parameters INLINE in the FUNCTION statement:\n");
+        sb.append("```\nFUNCTION z_my_func\n");
+        sb.append("  IMPORTING\n");
+        sb.append("    iv_param TYPE string\n");
+        sb.append("  EXPORTING\n");
+        sb.append("    ev_result TYPE string.\n\n");
+        sb.append("  \" implementation here\n");
         sb.append("ENDFUNCTION.\n```\n\n");
-        sb.append("NEVER use old-style parameter comment blocks like `*\"*\"Local Interface:` — ");
-        sb.append("they cause 'Parameter comment blocks are not allowed' errors.\n");
-        sb.append("The parameter interface is defined in the function module metadata, NOT in the source code.\n");
-        sb.append("For simple function modules, just write:\n");
+        sb.append("For function modules with no parameters:\n");
         sb.append("```\nFUNCTION z_my_func.\n  \" implementation here\nENDFUNCTION.\n```\n\n");
 
         // NOTE: Tool descriptions are NOT listed here — they are already sent
