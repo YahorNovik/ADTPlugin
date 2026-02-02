@@ -50,19 +50,12 @@ public class DdicDataElementTool extends AbstractDdicSourceTool {
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
                 + "<blue:wbobj xmlns:blue=\"http://www.sap.com/wbobj/dictionary/dtel\" "
                 + "xmlns:adtcore=\"http://www.sap.com/adt/core\" "
-                + "xmlns:dtel=\"http://www.sap.com/adt/dictionary/dataelements\" "
                 + "adtcore:name=\"" + escapeXml(name.toUpperCase()) + "\" "
                 + "adtcore:type=\"DTEL/DE\" "
                 + "adtcore:description=\"" + escapeXml(description) + "\" "
                 + "adtcore:language=\"EN\" "
                 + "adtcore:masterLanguage=\"EN\">"
                 + "<adtcore:packageRef adtcore:name=\"" + escapeXml(packageName) + "\"/>"
-                + "<dtel:dataElement>"
-                + "<dtel:typeKind>predefinedAbapType</dtel:typeKind>"
-                + "<dtel:dataType>CHAR</dtel:dataType>"
-                + "<dtel:dataTypeLength>000001</dtel:dataTypeLength>"
-                + "<dtel:dataTypeDecimals>000000</dtel:dataTypeDecimals>"
-                + "</dtel:dataElement>"
                 + "</blue:wbobj>";
     }
 

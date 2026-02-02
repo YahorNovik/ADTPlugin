@@ -176,7 +176,7 @@ public abstract class AbstractDdicSourceTool extends AbstractSapTool {
 
         } catch (java.io.IOException e) {
             String msg = e.getMessage() != null ? e.getMessage() : "";
-            if (msg.contains("already exists") || msg.contains("HTTP 500")) {
+            if (msg.contains("already exist") || msg.contains("HTTP 500")) {
                 return getBaseUrl() + "/" + name.toLowerCase();
             }
             throw e;

@@ -124,7 +124,7 @@ public class ScratchObjectManager {
         } catch (Exception e) {
             // If the object already exists, that's fine — treat as success
             String msg = e.getMessage() != null ? e.getMessage() : "";
-            if (msg.contains("already exists") || msg.contains("HTTP 500")) {
+            if (msg.contains("already exist") || msg.contains("HTTP 500")) {
                 return true;
             }
             System.err.println("ScratchObjectManager: failed to create scratch object at "
