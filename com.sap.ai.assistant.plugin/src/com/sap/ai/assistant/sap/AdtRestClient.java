@@ -343,6 +343,7 @@ public class AdtRestClient {
                 .uri(URI.create(url))
                 .header("Authorization", basicAuthHeader())
                 .header("Content-Type", contentType)
+                .header("Accept", "text/plain, application/*")
                 .header("Accept-Language", language)
                 .timeout(REQUEST_TIMEOUT)
                 .PUT(HttpRequest.BodyPublishers.ofString(body));
@@ -374,6 +375,7 @@ public class AdtRestClient {
                 .uri(URI.create(url))
                 .header("Authorization", basicAuthHeader())
                 .header("Content-Type", contentType)
+                .header("Accept", "text/plain, application/*")
                 .header("Accept-Language", language)
                 .timeout(REQUEST_TIMEOUT)
                 .PUT(HttpRequest.BodyPublishers.ofString(body));

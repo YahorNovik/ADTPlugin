@@ -205,7 +205,7 @@ public class CreateObjectTool extends AbstractSapTool {
         } catch (java.io.IOException createEx) {
             // If the object already exists, return a helpful message instead of an error
             String msg = createEx.getMessage() != null ? createEx.getMessage() : "";
-            if (msg.contains("already exists")) {
+            if (msg.contains("already exist")) {
                 JsonObject output = new JsonObject();
                 output.addProperty("status", "already_exists");
                 output.addProperty("name", name);
@@ -279,7 +279,7 @@ public class CreateObjectTool extends AbstractSapTool {
 
         } catch (java.io.IOException createEx) {
             String msg = createEx.getMessage() != null ? createEx.getMessage() : "";
-            if (msg.contains("already exists")) {
+            if (msg.contains("already exist")) {
                 JsonObject output = new JsonObject();
                 output.addProperty("status", "already_exists");
                 output.addProperty("name", name);

@@ -215,7 +215,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
                     created = true;
                 } catch (java.io.IOException createEx) {
                     String msg = createEx.getMessage() != null ? createEx.getMessage() : "";
-                    if (msg.contains("already exists") || msg.contains("HTTP 500")) {
+                    if (msg.contains("already exist") || msg.contains("HTTP 500")) {
                         objectUrl = "/sap/bc/adt/functions/groups/" + groupLower
                                 + "/fmodules/" + name.toLowerCase();
                     } else {
@@ -254,7 +254,7 @@ public class WriteAndCheckTool extends AbstractSapTool {
                     created = true;
                 } catch (java.io.IOException createEx) {
                     String msg = createEx.getMessage() != null ? createEx.getMessage() : "";
-                    if (msg.contains("already exists") || msg.contains("HTTP 500")) {
+                    if (msg.contains("already exist") || msg.contains("HTTP 500")) {
                         String baseUrl = TYPE_BASE_URL_MAP.get(typeUpper);
                         if (baseUrl != null) {
                             objectUrl = baseUrl + name.toLowerCase();

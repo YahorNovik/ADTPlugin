@@ -64,6 +64,24 @@ public class ContextBuilder {
         sb.append("3. The `functionGroup` parameter is REQUIRED for FUGR/FF — without it, the tool will return an error\n");
         sb.append("4. Source URL for function modules: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm_name}/source/main`\n\n");
 
+        // -- Function module source format --
+        sb.append("## Function Module Source Format\n\n");
+        sb.append("When writing source code for function modules, use ONLY the modern format:\n");
+        sb.append("```\nFUNCTION z_my_func.\n");
+        sb.append("*\"----------------------------------------------------------------------\n");
+        sb.append("*\" IMPORTING\n");
+        sb.append("*\"   VALUE(IV_PARAM) TYPE STRING\n");
+        sb.append("*\" EXPORTING\n");
+        sb.append("*\"   VALUE(EV_RESULT) TYPE STRING\n");
+        sb.append("*\"----------------------------------------------------------------------\n");
+        sb.append("  \" ... function body ...\n");
+        sb.append("ENDFUNCTION.\n```\n\n");
+        sb.append("NEVER use old-style parameter comment blocks like `*\"*\"Local Interface:` — ");
+        sb.append("they cause 'Parameter comment blocks are not allowed' errors.\n");
+        sb.append("The parameter interface is defined in the function module metadata, NOT in the source code.\n");
+        sb.append("For simple function modules, just write:\n");
+        sb.append("```\nFUNCTION z_my_func.\n  \" implementation here\nENDFUNCTION.\n```\n\n");
+
         // NOTE: Tool descriptions are NOT listed here — they are already sent
         // via the API's `tools` parameter. Listing them here would duplicate
         // ~800-1000 tokens on every request.
