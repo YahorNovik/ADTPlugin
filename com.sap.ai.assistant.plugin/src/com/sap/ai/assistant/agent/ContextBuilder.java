@@ -116,30 +116,6 @@ public class ContextBuilder {
         sb.append("writes with syntax errors are rejected.\n");
         sb.append("Only run `sap_atc_run` when the user explicitly requests ATC or quality checks.\n\n");
 
-        // -- Function module workflow --
-        sb.append("## Creating Function Modules\n\n");
-        sb.append("Function modules (FUGR/FF) live inside function groups (FUGR/F). To create one:\n");
-        sb.append("1. Create the function group first (if it doesn't exist) using `sap_create_object` with objtype='FUGR/F'\n");
-        sb.append("2. Create the function module using `sap_write_and_check` or `sap_create_object` with objtype='FUGR/FF' ");
-        sb.append("AND the `functionGroup` parameter set to the parent group name\n");
-        sb.append("3. The `functionGroup` parameter is REQUIRED for FUGR/FF — without it, the tool will return an error\n");
-        sb.append("4. Source URL for function modules: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm_name}/source/main`\n\n");
-
-        // -- Function module source format --
-        sb.append("## Function Module Source Format\n\n");
-        sb.append("CRITICAL: NEVER use `*\"` comment lines in function module source. ");
-        sb.append("Any line starting with `*\"` causes 'Parameter comment blocks are not allowed' errors.\n\n");
-        sb.append("Define parameters INLINE in the FUNCTION statement:\n");
-        sb.append("```\nFUNCTION z_my_func\n");
-        sb.append("  IMPORTING\n");
-        sb.append("    iv_param TYPE string\n");
-        sb.append("  EXPORTING\n");
-        sb.append("    ev_result TYPE string.\n\n");
-        sb.append("  \" implementation here\n");
-        sb.append("ENDFUNCTION.\n```\n\n");
-        sb.append("For function modules with no parameters:\n");
-        sb.append("```\nFUNCTION z_my_func.\n  \" implementation here\nENDFUNCTION.\n```\n\n");
-
         // NOTE: Tool descriptions are NOT listed here — they are already sent
         // via the API's `tools` parameter. Listing them here would duplicate
         // ~800-1000 tokens on every request.

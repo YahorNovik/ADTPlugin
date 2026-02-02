@@ -21,6 +21,7 @@ import com.sap.ai.assistant.model.ToolResult;
 public class ReadGuidelinesTool implements SapTool {
 
     public static final String NAME = "guidelines_read";
+    private static volatile boolean seeded = false;
 
     @Override
     public String getName() {
@@ -64,6 +65,11 @@ public class ReadGuidelinesTool implements SapTool {
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
+        if (!seeded) {
+            GuidelinesManager.seedDefaults();
+            seeded = true;
+        }
+
         String objectType = null;
         String fileName = null;
 

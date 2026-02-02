@@ -164,6 +164,55 @@ public final class GuidelinesManager {
     }
 
     /**
+     * Seeds default guideline files for object types that have critical
+     * tool-usage instructions. Only creates files that don't already exist.
+     * Called lazily on first guidelines_read.
+     */
+    public static void seedDefaults() throws IOException {
+        ensureDirectory();
+        seedIfMissing("functionmodule.md", FUNCTION_MODULE_DEFAULTS);
+    }
+
+    private static void seedIfMissing(String fileName, String content) throws IOException {
+        Path path = GUIDELINES_DIR.resolve(fileName);
+        if (!Files.exists(path)) {
+            Files.writeString(path, content, StandardCharsets.UTF_8);
+        }
+    }
+
+    private static final String FUNCTION_MODULE_DEFAULTS =
+            "# Function Module Guidelines\n\n"
+            + "## Creating Function Modules\n\n"
+            + "Function modules (FUGR/FF) live inside function groups (FUGR/F). To create one:\n\n"
+            + "1. Create the function group first (if it doesn't exist) using `sap_create_object` "
+            + "with objtype='FUGR/F'\n"
+            + "2. Create the function module using `sap_write_and_check` or `sap_create_object` "
+            + "with objtype='FUGR/FF' AND the `functionGroup` parameter set to the parent group name\n"
+            + "3. The `functionGroup` parameter is **REQUIRED** for FUGR/FF — without it, "
+            + "the tool will return an error\n"
+            + "4. For reading/writing FM source, use a raw URL: "
+            + "`/sap/bc/adt/functions/groups/{group}/fmodules/{fm_name}/source/main`\n\n"
+            + "## Source Format\n\n"
+            + "**CRITICAL:** NEVER use `*\"` comment lines in function module source. "
+            + "Any line starting with `*\"` causes 'Parameter comment blocks are not allowed' errors.\n\n"
+            + "Define parameters INLINE in the FUNCTION statement:\n\n"
+            + "```abap\n"
+            + "FUNCTION z_my_func\n"
+            + "  IMPORTING\n"
+            + "    iv_param TYPE string\n"
+            + "  EXPORTING\n"
+            + "    ev_result TYPE string.\n\n"
+            + "  \" implementation here\n"
+            + "ENDFUNCTION.\n"
+            + "```\n\n"
+            + "For function modules with no parameters:\n\n"
+            + "```abap\n"
+            + "FUNCTION z_my_func.\n"
+            + "  \" implementation here\n"
+            + "ENDFUNCTION.\n"
+            + "```\n";
+
+    /**
      * Ensures the guidelines directory exists.
      */
     private static void ensureDirectory() throws IOException {
