@@ -146,6 +146,11 @@ public class WriteAndCheckTool extends AbstractSapTool {
         String typeUpper = objtype.toUpperCase();
         boolean isFunctionModule = "FUGR/FF".equals(typeUpper);
 
+        // Strip *" parameter comment lines that SAP rejects for function modules
+        if (isFunctionModule) {
+            source = sanitizeFmSource(source);
+        }
+
         // Function modules require a functionGroup parameter
         if (isFunctionModule && (functionGroup == null || functionGroup.isEmpty())) {
             return ToolResult.error(null,

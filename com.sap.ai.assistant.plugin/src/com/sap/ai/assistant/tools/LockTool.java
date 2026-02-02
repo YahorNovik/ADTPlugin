@@ -2,7 +2,6 @@ package com.sap.ai.assistant.tools;
 
 import java.net.http.HttpResponse;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
@@ -39,25 +38,27 @@ public class LockTool extends AbstractSapTool {
                 "Lock access mode (default 'MODIFY')");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
+        properties.add("objectName", AdtUrlResolver.buildNameProperty());
         properties.add("objectUrl", urlProp);
         properties.add("accessMode", modeProp);
-
-        JsonArray required = new JsonArray();
-        required.add("objectUrl");
 
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
         schema.add("properties", properties);
-        schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Lock an ABAP object for editing. Returns a lock handle.",
+                "Lock an ABAP object for editing. Provide objectType + objectName, or objectUrl. "
+                + "Returns a lock handle.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String objectUrl = arguments.get("objectUrl").getAsString();
+        String objectUrl = resolveObjectUrlArg(arguments, "objectUrl");
+        if (objectUrl == null) {
+            return ToolResult.error(null, "Provide either objectType + objectName, or objectUrl.");
+        }
         String accessMode = optString(arguments, "accessMode");
         if (accessMode == null || accessMode.isEmpty()) {
             accessMode = "MODIFY";

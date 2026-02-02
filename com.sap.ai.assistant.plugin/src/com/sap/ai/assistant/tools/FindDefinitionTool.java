@@ -54,6 +54,8 @@ public class FindDefinitionTool extends AbstractSapTool {
                 "0-based end column of the element");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
+        properties.add("objectName", AdtUrlResolver.buildNameProperty());
         properties.add("url", urlProp);
         properties.add("source", sourceProp);
         properties.add("line", lineProp);
@@ -61,7 +63,6 @@ public class FindDefinitionTool extends AbstractSapTool {
         properties.add("endColumn", endColProp);
 
         JsonArray required = new JsonArray();
-        required.add("url");
         required.add("source");
         required.add("line");
         required.add("startColumn");
@@ -73,13 +74,17 @@ public class FindDefinitionTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Find definition of an ABAP element at a source position.",
+                "Find definition of an ABAP element at a source position. "
+                + "Provide objectType + objectName, or url for the source file.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String url = arguments.get("url").getAsString();
+        String url = resolveSourceUrlArg(arguments, "url");
+        if (url == null) {
+            return ToolResult.error(null, "Provide either objectType + objectName, or url.");
+        }
         String source = arguments.get("source").getAsString();
         int line = arguments.get("line").getAsInt();
         int startColumn = arguments.get("startColumn").getAsInt();

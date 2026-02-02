@@ -104,10 +104,28 @@ public abstract class AbstractDdicSourceTool extends AbstractSapTool {
         output.addProperty("sourceUrl", sourceUrl);
 
         // Step 4: Lock + write + unlock
-        lockWriteUnlock(objectUrl, sourceUrl, source, transport);
+        // Some object types (e.g. classic data elements, domains) don't have
+        // a /source/main endpoint. Handle 404 gracefully.
+        try {
+            lockWriteUnlock(objectUrl, sourceUrl, source, transport);
+            output.addProperty("sourceWritten", true);
+        } catch (java.io.IOException e) {
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            if (msg.contains("HTTP 404")) {
+                output.addProperty("sourceWritten", false);
+                output.addProperty("sourceError",
+                        "Source endpoint not available for this object type. "
+                        + "The object was created but source could not be written. "
+                        + "This object type may require metadata-only configuration.");
+            } else {
+                throw e;
+            }
+        }
 
-        // Step 5: Activate
-        activate(objectUrl, name, output);
+        // Step 5: Activate (only if source was written)
+        if (!output.has("sourceWritten") || output.get("sourceWritten").getAsBoolean()) {
+            activate(objectUrl, name, output);
+        }
 
         return ToolResult.success(null, output.toString());
     }
@@ -158,7 +176,7 @@ public abstract class AbstractDdicSourceTool extends AbstractSapTool {
                                    String packageName, String packagePath,
                                    String transport) throws Exception {
         String xmlBody = buildCreationXml(name, description, packageName, packagePath);
-        String createPath = getBaseUrl();
+        String createPath = getBaseUrl() + "/" + name.toLowerCase();
         if (transport != null && !transport.isEmpty()) {
             createPath += "?corrNr=" + urlEncode(transport);
         }

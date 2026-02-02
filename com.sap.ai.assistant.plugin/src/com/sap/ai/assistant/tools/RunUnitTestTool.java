@@ -2,7 +2,6 @@ package com.sap.ai.assistant.tools;
 
 import java.net.http.HttpResponse;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
@@ -48,26 +47,28 @@ public class RunUnitTestTool extends AbstractSapTool {
                         + "(default: 'short')");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
+        properties.add("objectName", AdtUrlResolver.buildNameProperty());
         properties.add("objectUrl", urlProp);
         properties.add("riskLevel", riskProp);
         properties.add("duration", durationProp);
 
-        JsonArray required = new JsonArray();
-        required.add("objectUrl");
-
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
         schema.add("properties", properties);
-        schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Run ABAP Unit tests. Returns pass/fail per test class and method.",
+                "Run ABAP Unit tests. Provide objectType + objectName, or objectUrl. "
+                + "Returns pass/fail per test class and method.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String objectUrl = arguments.get("objectUrl").getAsString();
+        String objectUrl = resolveObjectUrlArg(arguments, "objectUrl");
+        if (objectUrl == null) {
+            return ToolResult.error(null, "Provide either objectType + objectName, or objectUrl.");
+        }
 
         // Parse risk level flags
         String riskLevelStr = optString(arguments, "riskLevel");

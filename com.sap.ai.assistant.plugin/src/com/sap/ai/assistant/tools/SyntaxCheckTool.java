@@ -61,27 +61,30 @@ public class SyntaxCheckTool extends AbstractSapTool {
                 "Optional: name of the main program (for includes)");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
+        properties.add("objectName", AdtUrlResolver.buildNameProperty());
         properties.add("url", urlProp);
         properties.add("content", contentProp);
         properties.add("mainUrl", mainUrlProp);
         properties.add("mainProgram", mainProgramProp);
 
-        JsonArray required = new JsonArray();
-        required.add("url");
-
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
         schema.add("properties", properties);
-        schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Check ABAP syntax. With `content`, validates without saving. Returns errors with line numbers.",
+                "Check ABAP syntax. Provide objectType + objectName, or a raw url. "
+                + "With `content`, validates without saving. Returns errors with line numbers.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String url = ensureSourceUrl(arguments.get("url").getAsString());
+        String url = resolveSourceUrlArg(arguments, "url");
+        if (url == null) {
+            return ToolResult.error(null, "Provide either objectType + objectName, or url.");
+        }
+        url = ensureSourceUrl(url);
         String content = optString(arguments, "content");
         String mainUrl = optString(arguments, "mainUrl");
         String mainProgram = optString(arguments, "mainProgram");

@@ -38,11 +38,12 @@ public class UnlockTool extends AbstractSapTool {
                 "The lock handle obtained from sap_lock");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
+        properties.add("objectName", AdtUrlResolver.buildNameProperty());
         properties.add("objectUrl", urlProp);
         properties.add("lockHandle", lockProp);
 
         JsonArray required = new JsonArray();
-        required.add("objectUrl");
         required.add("lockHandle");
 
         JsonObject schema = new JsonObject();
@@ -51,13 +52,16 @@ public class UnlockTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Unlock an ABAP object after editing.",
+                "Unlock an ABAP object after editing. Provide objectType + objectName, or objectUrl.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String objectUrl = arguments.get("objectUrl").getAsString();
+        String objectUrl = resolveObjectUrlArg(arguments, "objectUrl");
+        if (objectUrl == null) {
+            return ToolResult.error(null, "Provide either objectType + objectName, or objectUrl.");
+        }
         String lockHandle = arguments.get("lockHandle").getAsString();
 
         String path = objectUrl + "?_action=UNLOCK&lockHandle=" + urlEncode(lockHandle);

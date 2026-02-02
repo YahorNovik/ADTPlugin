@@ -45,12 +45,13 @@ public class SetSourceTool extends AbstractSapTool {
                 "Optional transport request number (e.g. 'DEVK900123')");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
+        properties.add("objectName", AdtUrlResolver.buildNameProperty());
         properties.add("objectSourceUrl", urlProp);
         properties.add("source", sourceProp);
         properties.add("transport", transportProp);
 
         JsonArray required = new JsonArray();
-        required.add("objectSourceUrl");
         required.add("source");
 
         JsonObject schema = new JsonObject();
@@ -59,15 +60,25 @@ public class SetSourceTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Write ABAP source code. Locks, writes, and unlocks automatically.",
+                "Write ABAP source code. Provide objectType + objectName, or objectSourceUrl. "
+                + "Locks, writes, and unlocks automatically.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String objectSourceUrl = ensureSourceUrl(arguments.get("objectSourceUrl").getAsString());
+        String objectSourceUrl = resolveSourceUrlArg(arguments, "objectSourceUrl");
+        if (objectSourceUrl == null) {
+            return ToolResult.error(null, "Provide either objectType + objectName, or objectSourceUrl.");
+        }
+        objectSourceUrl = ensureSourceUrl(objectSourceUrl);
         String source = arguments.get("source").getAsString();
         String transport = optString(arguments, "transport");
+
+        // Strip *" parameter comment lines that SAP rejects for function modules
+        if (isFunctionModuleUrl(objectSourceUrl)) {
+            source = sanitizeFmSource(source);
+        }
 
         return lockWriteUnlock(objectSourceUrl, source, transport);
     }

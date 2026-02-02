@@ -3,6 +3,7 @@ package com.sap.ai.assistant.tools;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.google.gson.JsonObject;
 import com.sap.ai.assistant.sap.AdtRestClient;
@@ -75,6 +76,44 @@ public abstract class AbstractSapTool implements SapTool {
     }
 
     /**
+     * Resolve a source URL from tool arguments.
+     * Tries {@code objectType} + {@code objectName} first (via {@link AdtUrlResolver}),
+     * then falls back to the named URL parameter.
+     *
+     * @param arguments    the tool arguments JSON
+     * @param urlParamName the fallback URL parameter name (e.g. "url", "objectSourceUrl")
+     * @return the resolved source URL, or {@code null} if neither is provided
+     */
+    protected String resolveSourceUrlArg(JsonObject arguments, String urlParamName) {
+        String type = optString(arguments, "objectType");
+        String name = optString(arguments, "objectName");
+        String resolved = AdtUrlResolver.resolveSourceUrl(type, name);
+        if (resolved != null) {
+            return resolved;
+        }
+        return optString(arguments, urlParamName);
+    }
+
+    /**
+     * Resolve an object URL from tool arguments.
+     * Tries {@code objectType} + {@code objectName} first (via {@link AdtUrlResolver}),
+     * then falls back to the named URL parameter.
+     *
+     * @param arguments    the tool arguments JSON
+     * @param urlParamName the fallback URL parameter name (e.g. "objectUrl")
+     * @return the resolved object URL, or {@code null} if neither is provided
+     */
+    protected String resolveObjectUrlArg(JsonObject arguments, String urlParamName) {
+        String type = optString(arguments, "objectType");
+        String name = optString(arguments, "objectName");
+        String resolved = AdtUrlResolver.resolveObjectUrl(type, name);
+        if (resolved != null) {
+            return resolved;
+        }
+        return optString(arguments, urlParamName);
+    }
+
+    /**
      * URL-encode a string using UTF-8.
      *
      * @param value the raw value
@@ -85,6 +124,31 @@ public abstract class AbstractSapTool implements SapTool {
             return "";
         }
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Sanitize function module source by removing {@code *"} parameter comment
+     * lines that SAP rejects with "Parameter comment blocks are not allowed".
+     *
+     * @param source the raw ABAP source code
+     * @return the sanitized source with {@code *"} lines removed
+     */
+    public static String sanitizeFmSource(String source) {
+        if (source == null) return null;
+        return source.lines()
+                .filter(line -> !line.stripLeading().startsWith("*\""))
+                .collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * Returns {@code true} if the given ADT URL points to a function module
+     * (contains {@code /fmodules/}).
+     *
+     * @param url the ADT source or object URL
+     * @return whether this is a function module URL
+     */
+    public static boolean isFunctionModuleUrl(String url) {
+        return url != null && url.toLowerCase().contains("/fmodules/");
     }
 
     /**

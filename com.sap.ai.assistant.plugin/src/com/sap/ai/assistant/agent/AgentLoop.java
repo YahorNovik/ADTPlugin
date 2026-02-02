@@ -13,6 +13,7 @@ import com.sap.ai.assistant.llm.AbstractLlmProvider;
 import com.sap.ai.assistant.llm.LlmException;
 import com.sap.ai.assistant.llm.LlmProvider;
 import com.sap.ai.assistant.model.ChatConversation;
+import com.sap.ai.assistant.tools.ResearchTool;
 import com.sap.ai.assistant.model.ChatMessage;
 import com.sap.ai.assistant.model.DiffRequest;
 import com.sap.ai.assistant.model.LlmUsage;
@@ -343,6 +344,11 @@ public class AgentLoop {
             return executeWithDiffApproval(toolCall, tool, callback);
         }
 
+        // Inject parent callback so research sub-agent logs appear in DevLog
+        if (tool instanceof ResearchTool) {
+            ((ResearchTool) tool).setParentCallback(callback);
+        }
+
         return executeToolDirectly(toolCall, tool);
     }
 
@@ -437,12 +443,27 @@ public class AgentLoop {
             diffRequest.awaitDecision();
 
             switch (diffRequest.getDecision()) {
-                case ACCEPTED:
+                case ACCEPTED: {
+                    // Sanitize FM source before execution
+                    if (AbstractSapTool.isFunctionModuleUrl(sourceUrl)) {
+                        JsonObject sanitizedArgs = args.deepCopy();
+                        String src = sanitizedArgs.has("source")
+                                ? sanitizedArgs.get("source").getAsString() : "";
+                        sanitizedArgs.addProperty("source",
+                                AbstractSapTool.sanitizeFmSource(src));
+                        return ensureToolCallId(toolCall, tool.execute(sanitizedArgs));
+                    }
                     return ensureToolCallId(toolCall, tool.execute(args));
+                }
 
                 case EDITED: {
                     JsonObject modifiedArgs = args.deepCopy();
-                    modifiedArgs.addProperty("source", diffRequest.getFinalSource());
+                    String editedSource = diffRequest.getFinalSource();
+                    // Sanitize FM source even when user edits
+                    if (AbstractSapTool.isFunctionModuleUrl(sourceUrl)) {
+                        editedSource = AbstractSapTool.sanitizeFmSource(editedSource);
+                    }
+                    modifiedArgs.addProperty("source", editedSource);
                     return ensureToolCallId(toolCall, tool.execute(modifiedArgs));
                 }
 
@@ -583,13 +604,18 @@ public class AgentLoop {
             String compact = prefix.isEmpty()
                     ? sapMessage
                     : prefix + " -- " + sapMessage;
+            compact = addActionableGuidance(compact);
             return ToolResult.error(result.getToolCallId(), compact);
         }
 
-        // No SAP XML found; just truncate if very long
-        if (content.length() > 500) {
+        // No SAP XML found; apply actionable guidance then truncate if very long
+        String guided = addActionableGuidance(content);
+        if (guided.length() > 600) {
             return ToolResult.error(result.getToolCallId(),
-                    content.substring(0, 500) + "... (truncated)");
+                    guided.substring(0, 600) + "... (truncated)");
+        }
+        if (!guided.equals(content)) {
+            return ToolResult.error(result.getToolCallId(), guided);
         }
         return result;
     }
@@ -605,6 +631,33 @@ public class AgentLoop {
             return m.group(1).trim();
         }
         return null;
+    }
+
+    /**
+     * Appends actionable fix guidance for common SAP error patterns.
+     * This helps the LLM recover faster by suggesting the correct action.
+     */
+    private static String addActionableGuidance(String errorMessage) {
+        if (errorMessage == null) return null;
+
+        if (errorMessage.contains("Parameter comment blocks are not allowed")) {
+            return errorMessage
+                    + "\n-> FIX: Remove all lines starting with *\" from the source.";
+        }
+        if (errorMessage.contains("does already exist")) {
+            return errorMessage
+                    + "\n-> FIX: The object already exists. Use sap_set_source to update it.";
+        }
+        if (errorMessage.contains("not yet locked")) {
+            return errorMessage
+                    + "\n-> FIX: The lock was lost. Retry the write operation.";
+        }
+        if (errorMessage.contains("transport request")) {
+            return errorMessage
+                    + "\n-> FIX: A transport request is required for this package. "
+                    + "Use the transport parameter.";
+        }
+        return errorMessage;
     }
 
     // ---------------------------------------------------------------

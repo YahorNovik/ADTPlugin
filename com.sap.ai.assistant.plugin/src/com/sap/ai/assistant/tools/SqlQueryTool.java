@@ -53,7 +53,11 @@ public class SqlQueryTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Execute an ABAP SQL query and return the result set as a table.",
+                "Execute an ABAP SQL SELECT query against SAP database tables and return "
+                + "actual DATA ROWS. Use this to read real data from tables (e.g. "
+                + "'SELECT matnr, mtart, matkl FROM mara UP TO 10 ROWS'). "
+                + "This returns row values, NOT table structure or field definitions. "
+                + "For table structure/fields, use sap_get_source or sap_type_info instead.",
                 schema);
     }
 
@@ -64,7 +68,8 @@ public class SqlQueryTool extends AbstractSapTool {
 
         String path = "/sap/bc/adt/datapreview/freestyle?rowNumber=" + maxRows;
         HttpResponse<String> resp = client.post(path, query,
-                "text/plain; charset=utf-8", "application/xml");
+                "text/plain; charset=utf-8",
+                "application/vnd.sap.adt.datapreview.table.v1+xml");
 
         JsonObject result = AdtXmlParser.parseDataPreview(resp.body());
         return ToolResult.success(null, result.toString());

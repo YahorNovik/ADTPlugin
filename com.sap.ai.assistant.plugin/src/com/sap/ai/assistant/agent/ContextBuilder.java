@@ -44,23 +44,15 @@ public class ContextBuilder {
             + "- **Dead code**: Unused variables, unreachable code, commented-out blocks\n"
             + "- **Documentation**: Missing class/method descriptions, unclear logic without comments\n"
             + "- **Hardcoded values**: Magic numbers, hardcoded texts (should use message class)\n\n"
-            + "## ADT URL Patterns for sap_get_source\n\n"
-            + "Use these URLs with `sap_get_source` (object names MUST be lowercase):\n"
-            + "- **Class**: `/sap/bc/adt/oo/classes/{class}/source/main`\n"
-            + "- **Interface**: `/sap/bc/adt/oo/interfaces/{intf}/source/main`\n"
-            + "- **Program**: `/sap/bc/adt/programs/programs/{prog}/source/main`\n"
-            + "- **Function module**: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm}/source/main`\n"
-            + "- **CDS view**: `/sap/bc/adt/ddic/ddl/sources/{view}/source/main`\n"
-            + "- **Table fields**: `/sap/bc/adt/ddic/tables/{table}/source/main`\n"
-            + "- **Structure fields**: `/sap/bc/adt/ddic/structures/{struct}/source/main`\n"
-            + "- **Data element**: `/sap/bc/adt/ddic/dataelements/{dtel}/source/main`\n"
-            + "- **Domain**: `/sap/bc/adt/ddic/domains/{domain}/source/main`\n\n"
-            + "## Reading Data vs Structure\n\n"
+            + "## Reading Source Code, Data, and Type Info\n\n"
             + "| Need | Tool | Example |\n"
             + "|------|------|---------|\n"
-            + "| **Field definitions** | `sap_get_source` | `.../tables/mara/source/main` → field names, types |\n"
+            + "| **Source / field definitions** | `sap_get_source` | type='CLAS', name='ZCL_FOO' or type='TABL', name='MARA' |\n"
             + "| **Data rows** | `sap_sql_query` | `SELECT matnr FROM mara UP TO 5 ROWS` → row values |\n"
             + "| **Data element details** | `sap_type_info` | name='MATNR' → domain, type, labels |\n\n"
+            + "All SAP tools accept `objectType` + `objectName` to identify objects — "
+            + "the tool resolves the ADT URL automatically. "
+            + "For function modules, use a raw URL instead.\n\n"
             + "## SAP Documentation (MCP Tools)\n\n"
             + "Use these for documentation lookup during review:\n"
             + "- `mcp_sap_help_search` — ABAP keyword reference, BAdIs, SAP standard behavior\n"
@@ -165,25 +157,17 @@ public class ContextBuilder {
         sb.append("This keeps responses concise and avoids duplicating code that is already in the tool call.\n\n");
 
         // -- Reading source code and data --
-        sb.append("## Reading Source Code and Data\n\n");
-        sb.append("Use `sap_get_source` to read source code and field definitions. ");
-        sb.append("URL patterns (object names MUST be lowercase):\n");
-        sb.append("- **Table fields**: `/sap/bc/adt/ddic/tables/{table}/source/main` (e.g. `.../tables/mara/source/main`)\n");
-        sb.append("- **Structure fields**: `/sap/bc/adt/ddic/structures/{struct}/source/main`\n");
-        sb.append("- **CDS view (DDL)**: `/sap/bc/adt/ddic/ddl/sources/{view}/source/main`\n");
-        sb.append("- **Data element**: `/sap/bc/adt/ddic/dataelements/{dtel}/source/main`\n");
-        sb.append("- **Domain**: `/sap/bc/adt/ddic/domains/{domain}/source/main`\n");
-        sb.append("- **Class**: `/sap/bc/adt/oo/classes/{class}/source/main`\n");
-        sb.append("- **Interface**: `/sap/bc/adt/oo/interfaces/{intf}/source/main`\n");
-        sb.append("- **Program**: `/sap/bc/adt/programs/programs/{prog}/source/main`\n");
-        sb.append("- **Function module**: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm}/source/main`\n\n");
-        sb.append("**Reading data vs structure** — these tools serve DIFFERENT purposes:\n\n");
+        sb.append("## Reading Source Code, Data, and Type Info\n\n");
+        sb.append("These tools serve DIFFERENT purposes — do NOT confuse them:\n\n");
         sb.append("| Need | Tool | Example |\n");
         sb.append("|------|------|---------|\n");
-        sb.append("| **Table/structure field definitions** | `sap_get_source` | `.../tables/mara/source/main` → field names, types, lengths |\n");
+        sb.append("| **Source code / field definitions** | `sap_get_source` | type='TABL', name='MARA' → field names, types, lengths |\n");
         sb.append("| **Actual data rows from a table** | `sap_sql_query` | `SELECT matnr, mtart FROM mara UP TO 10 ROWS` → row values |\n");
         sb.append("| **Data element/domain details** | `sap_type_info` | name='MATNR' → domain, data type, length, labels |\n\n");
-        sb.append("`sap_sql_query` executes real ABAP SQL against the database and returns DATA ROWS (not structure). ");
+        sb.append("All SAP tools accept `objectType` + `objectName` parameters to identify objects ");
+        sb.append("(e.g. type='CLAS', name='ZCL_MY_CLASS'). The tool resolves the ADT URL automatically. ");
+        sb.append("For function modules, use a raw URL: objectSourceUrl='/sap/bc/adt/functions/groups/{group}/fmodules/{fm}/source/main'.\n\n");
+        sb.append("`sap_sql_query` executes real ABAP SQL and returns DATA ROWS (not structure). ");
         sb.append("Example: `SELECT carrid, connid, fldate FROM sflight UP TO 5 ROWS`.\n\n");
 
         // -- Research tool / MCP documentation --

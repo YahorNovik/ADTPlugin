@@ -2,7 +2,6 @@ package com.sap.ai.assistant.tools;
 
 import java.net.http.HttpResponse;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
@@ -43,26 +42,28 @@ public class UsageReferencesTool extends AbstractSapTool {
                 "Optional 0-based column of the element");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
+        properties.add("objectName", AdtUrlResolver.buildNameProperty());
         properties.add("url", urlProp);
         properties.add("line", lineProp);
         properties.add("column", colProp);
 
-        JsonArray required = new JsonArray();
-        required.add("url");
-
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
         schema.add("properties", properties);
-        schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Find all usages (where-used) of an ABAP element.",
+                "Find all usages (where-used) of an ABAP element. "
+                + "Provide objectType + objectName, or url.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String url = arguments.get("url").getAsString();
+        String url = resolveObjectUrlArg(arguments, "url");
+        if (url == null) {
+            return ToolResult.error(null, "Provide either objectType + objectName, or url.");
+        }
         String line = optString(arguments, "line");
         String column = optString(arguments, "column");
 

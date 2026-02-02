@@ -2,7 +2,6 @@ package com.sap.ai.assistant.tools;
 
 import java.net.http.HttpResponse;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
@@ -45,26 +44,28 @@ public class AtcRunTool extends AbstractSapTool {
                 "Maximum number of findings to return");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
+        properties.add("objectName", AdtUrlResolver.buildNameProperty());
         properties.add("objectUrl", urlProp);
         properties.add("variant", variantProp);
         properties.add("maxResults", maxProp);
 
-        JsonArray required = new JsonArray();
-        required.add("objectUrl");
-
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
         schema.add("properties", properties);
-        schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Run ATC quality checks. Returns findings with priority and messages.",
+                "Run ATC quality checks. Provide objectType + objectName, or objectUrl. "
+                + "Returns findings with priority and messages.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String objectUrl = arguments.get("objectUrl").getAsString();
+        String objectUrl = resolveObjectUrlArg(arguments, "objectUrl");
+        if (objectUrl == null) {
+            return ToolResult.error(null, "Provide either objectType + objectName, or objectUrl.");
+        }
         String variant = optString(arguments, "variant");
         if (variant == null || variant.isEmpty()) {
             variant = "DEFAULT";

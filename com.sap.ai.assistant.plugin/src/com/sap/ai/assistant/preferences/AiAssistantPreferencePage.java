@@ -26,6 +26,8 @@ import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPreferencePage;
 
 import com.sap.ai.assistant.Activator;
+import com.sap.ai.assistant.llm.ModelFetcher;
+import com.sap.ai.assistant.llm.LlmException;
 import com.sap.ai.assistant.mcp.McpClient;
 import com.sap.ai.assistant.mcp.McpServerConfig;
 import com.sap.ai.assistant.model.LlmProviderConfig;
@@ -98,10 +100,22 @@ public class AiAssistantPreferencePage extends PreferencePage
         baseUrlText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         baseUrlText.setMessage("https://api.example.com");
 
-        // Model
+        // Model + Fetch button
         new Label(llmGroup, SWT.NONE).setText("Model:");
-        modelCombo = new Combo(llmGroup, SWT.DROP_DOWN);
+        Composite modelRow = new Composite(llmGroup, SWT.NONE);
+        modelRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout modelRowLayout = new GridLayout(2, false);
+        modelRowLayout.marginWidth = 0;
+        modelRowLayout.marginHeight = 0;
+        modelRow.setLayout(modelRowLayout);
+
+        modelCombo = new Combo(modelRow, SWT.DROP_DOWN);
         modelCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        Button fetchModelsBtn = new Button(modelRow, SWT.PUSH);
+        fetchModelsBtn.setText("Fetch Models");
+        fetchModelsBtn.setToolTipText("Fetch available models from the provider API using your API key");
+        fetchModelsBtn.addListener(SWT.Selection, e -> handleFetchModels());
 
         // Research Model
         new Label(llmGroup, SWT.NONE).setText("Research Model:");
@@ -261,6 +275,62 @@ public class AiAssistantPreferencePage extends PreferencePage
             int researchDefault = getDefaultResearchModelIndex(provider);
             selectModelInCombo(researchModelCombo, currentResearchModel, researchDefault);
         }
+    }
+
+    private void handleFetchModels() {
+        int idx = providerCombo.getSelectionIndex();
+        if (idx < 0 || idx >= providers.length) return;
+
+        LlmProviderConfig.Provider provider = providers[idx];
+        String apiKey = apiKeyText.getText().trim();
+        String baseUrl = baseUrlText.getText().trim();
+
+        if (apiKey.isEmpty()) {
+            org.eclipse.jface.dialogs.MessageDialog.openWarning(
+                    getShell(), "Fetch Models", "Please enter an API key first.");
+            return;
+        }
+
+        String currentModel = modelCombo.getText();
+        String currentResearchModel = researchModelCombo.getText();
+        Shell shell = getShell();
+
+        // Run in a background thread to avoid blocking the UI
+        new Thread(() -> {
+            try {
+                List<String> models = ModelFetcher.fetchModels(provider, apiKey, baseUrl);
+                if (models.isEmpty()) {
+                    shell.getDisplay().asyncExec(() ->
+                        org.eclipse.jface.dialogs.MessageDialog.openInformation(
+                                shell, "Fetch Models",
+                                "No chat-capable models found for " + provider.getDisplayName() + "."));
+                    return;
+                }
+
+                shell.getDisplay().asyncExec(() -> {
+                    modelCombo.removeAll();
+                    researchModelCombo.removeAll();
+                    for (String m : models) {
+                        modelCombo.add(m);
+                        researchModelCombo.add(m);
+                    }
+                    // Try to restore previous selection
+                    selectModelInCombo(modelCombo, currentModel, 0);
+                    selectModelInCombo(researchModelCombo, currentResearchModel,
+                            getDefaultResearchModelIndex(provider));
+
+                    org.eclipse.jface.dialogs.MessageDialog.openInformation(
+                            shell, "Fetch Models",
+                            "Loaded " + models.size() + " models from "
+                            + provider.getDisplayName() + ".");
+                });
+            } catch (LlmException e) {
+                shell.getDisplay().asyncExec(() ->
+                    org.eclipse.jface.dialogs.MessageDialog.openError(
+                            shell, "Fetch Models",
+                            "Failed to fetch models:\n" + e.getMessage()));
+            }
+        }, "ModelFetcher").start();
     }
 
     private void selectModelInCombo(Combo combo, String currentModel, int defaultIdx) {

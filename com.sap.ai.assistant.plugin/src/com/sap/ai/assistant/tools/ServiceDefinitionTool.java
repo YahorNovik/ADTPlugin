@@ -53,7 +53,8 @@ public class ServiceDefinitionTool extends AbstractDdicSourceTool {
                 + "adtcore:name=\"" + escapeXml(name.toUpperCase()) + "\" "
                 + "adtcore:type=\"SRVD/SRV\" "
                 + "adtcore:description=\"" + escapeXml(description) + "\" "
-                + "adtcore:language=\"EN\">"
+                + "adtcore:language=\"EN\" "
+                + "srvd:srvdSourceType=\"S\">"
                 + "<adtcore:packageRef adtcore:name=\"" + escapeXml(packageName) + "\" "
                 + "adtcore:uri=\"" + escapeXml(packagePath) + "\"/>"
                 + "</srvd:srvdSource>";

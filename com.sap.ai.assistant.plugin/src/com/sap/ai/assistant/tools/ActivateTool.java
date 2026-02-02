@@ -39,12 +39,12 @@ public class ActivateTool extends AbstractSapTool {
                 "The ADT object URL (e.g. '/sap/bc/adt/programs/programs/ztest')");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
         properties.add("objectName", nameProp);
         properties.add("objectUrl", urlProp);
 
         JsonArray required = new JsonArray();
         required.add("objectName");
-        required.add("objectUrl");
 
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
@@ -52,14 +52,18 @@ public class ActivateTool extends AbstractSapTool {
         schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "Activate an ABAP object (make inactive version active).",
+                "Activate an ABAP object (make inactive version active). "
+                + "Provide objectType + objectName, or objectUrl + objectName.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
         String objectName = arguments.get("objectName").getAsString();
-        String objectUrl = arguments.get("objectUrl").getAsString();
+        String objectUrl = resolveObjectUrlArg(arguments, "objectUrl");
+        if (objectUrl == null) {
+            return ToolResult.error(null, "Provide either objectType (with objectName), or objectUrl.");
+        }
 
         String xmlBody = "<adtcore:objectReferences xmlns:adtcore=\"http://www.sap.com/adt/core\">"
                 + "<adtcore:objectReference adtcore:uri=\"" + escapeXml(objectUrl)
