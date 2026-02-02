@@ -84,6 +84,10 @@ public class SapToolRegistry {
         register(map, new CreateTransportTool(client));
         register(map, new DeleteObjectTool(client));
 
+        // Local tools (no SAP connection needed)
+        register(map, new ReadGuidelinesTool());
+        register(map, new UpdateGuidelinesTool());
+
         for (SapTool tool : additionalTools) {
             register(map, tool);
         }

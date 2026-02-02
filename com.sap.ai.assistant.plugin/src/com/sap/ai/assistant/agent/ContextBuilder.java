@@ -69,6 +69,10 @@ public class ContextBuilder {
             + "Reference specific line numbers and show short code snippets (under 5 lines).\n\n"
             + "### Summary\n"
             + "Overall code quality assessment and priority-ordered list of recommended changes.\n\n"
+            + "## Object Type Guidelines\n\n"
+            + "Before reviewing, call `guidelines_read` with the object type to check for "
+            + "project-specific naming conventions and best practices. "
+            + "After the review, use `guidelines_update` to save useful notes for future reviews.\n\n"
             + "## Guidelines\n\n"
             + "- Report warnings, not just errors — warnings indicate potential issues\n"
             + "- Be specific: cite line numbers and show problematic code\n"
@@ -148,6 +152,16 @@ public class ContextBuilder {
         sb.append("- Any dependencies between steps (e.g. function group before function module)\n\n");
         sb.append("This helps the user understand your plan and catch mistakes early. ");
         sb.append("For simple single-object tasks (read source, check syntax), a one-sentence summary is enough.\n\n");
+
+        // -- Guidelines --
+        sb.append("## Object Type Guidelines\n\n");
+        sb.append("You have access to persistent guideline files for each ABAP object type ");
+        sb.append("(class.md, report.md, functionmodule.md, etc.) stored locally.\n\n");
+        sb.append("- **Before creating or modifying** an object, call `guidelines_read` with the ");
+        sb.append("object type to check for naming conventions, best practices, and notes.\n");
+        sb.append("- **After discovering** useful patterns, conventions, or lessons learned, ");
+        sb.append("call `guidelines_update` to save notes for future reference.\n");
+        sb.append("- If no guidelines exist yet for a type, that's fine — create them as you learn.\n\n");
 
         // -- Output style instruction --
         sb.append("## Response Style\n\n");

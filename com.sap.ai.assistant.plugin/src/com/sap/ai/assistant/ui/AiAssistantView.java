@@ -473,6 +473,7 @@ public class AiAssistantView extends ViewPart {
                         researchTools.add(new SqlQueryTool(restClient));
                     }
                     researchTools.addAll(mcpTools);
+                    researchTools.add(new com.sap.ai.assistant.tools.ReadGuidelinesTool());
 
                     // Shared callback for both main and research agents
                     AgentCallback agentCallback = new AgentCallback() {
@@ -589,6 +590,7 @@ public class AiAssistantView extends ViewPart {
                             reviewTools.add(new SyntaxCheckTool(restClient));
                             reviewTools.add(new AtcRunTool(restClient));
                         }
+                        reviewTools.add(new com.sap.ai.assistant.tools.UpdateGuidelinesTool());
 
                         LlmProvider reviewLlm = LlmProviderFactory.create(finalResearchConfig);
                         SapToolRegistry reviewRegistry = SapToolRegistry.withToolsOnly(reviewTools);
