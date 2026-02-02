@@ -37,24 +37,26 @@ public class GetIncludesTool extends AbstractSapTool {
                 + "(e.g. '/sap/bc/adt/programs/programs/ztest')");
 
         JsonObject properties = new JsonObject();
+        properties.add("objectType", AdtUrlResolver.buildTypeProperty());
+        properties.add("objectName", AdtUrlResolver.buildNameProperty());
         properties.add("objectUrl", urlProp);
-
-        JsonArray required = new JsonArray();
-        required.add("objectUrl");
 
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
         schema.add("properties", properties);
-        schema.add("required", required);
 
         return new ToolDefinition(NAME,
-                "List includes of a program, class, or function group.",
+                "List includes of a program, class, or function group. "
+                + "Provide objectType + objectName, or objectUrl.",
                 schema);
     }
 
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
-        String objectUrl = arguments.get("objectUrl").getAsString();
+        String objectUrl = resolveObjectUrlArg(arguments, "objectUrl");
+        if (objectUrl == null) {
+            return ToolResult.error(null, "Provide either objectType + objectName, or objectUrl.");
+        }
 
         HttpResponse<String> resp = client.get(objectUrl, "application/*");
         JsonObject structure = AdtXmlParser.parseObjectStructure(resp.body());
