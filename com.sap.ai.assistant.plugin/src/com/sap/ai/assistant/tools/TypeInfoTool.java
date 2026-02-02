@@ -97,7 +97,7 @@ public class TypeInfoTool extends AbstractSapTool {
             HttpResponse<String> resp = client.get(propsPath,
                     "application/vnd.sap.adt.objectproperties+xml, application/xml");
             if (resp.body() != null && !resp.body().isEmpty()) {
-                JsonObject result = AdtXmlParser.parseObjectStructure(resp.body());
+                JsonObject result = AdtXmlParser.parseDdicContent(resp.body());
                 result.addProperty("name", name);
                 return ToolResult.success(null, result.toString());
             }
@@ -112,7 +112,7 @@ public class TypeInfoTool extends AbstractSapTool {
         try {
             HttpResponse<String> resp = client.get(path, accept);
             if (resp.body() != null && !resp.body().isEmpty()) {
-                JsonObject result = AdtXmlParser.parseObjectStructure(resp.body());
+                JsonObject result = AdtXmlParser.parseDdicContent(resp.body());
                 if (result.size() > 0) {
                     return result.toString();
                 }

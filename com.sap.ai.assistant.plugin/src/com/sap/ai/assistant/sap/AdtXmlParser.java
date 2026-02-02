@@ -5,8 +5,11 @@ import java.io.StringReader;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import org.w3c.dom.Attr;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 
@@ -198,6 +201,150 @@ public final class AdtXmlParser {
         }
 
         return result;
+    }
+
+    // ---------------------------------------------------------------
+    // DDIC content parsing (data elements, domains, table types)
+    // ---------------------------------------------------------------
+
+    /**
+     * Parse a DDIC object XML response (data element, domain, table type)
+     * and extract both the standard metadata and the full DDIC content
+     * (type references, domain info, labels, etc.).
+     * <p>
+     * This is richer than {@link #parseObjectStructure(String)} which only
+     * extracts metadata, links, and includes.
+     * </p>
+     *
+     * @param xml raw XML string
+     * @return JsonObject with metaData, content, and links
+     */
+    public static JsonObject parseDdicContent(String xml) {
+        JsonObject result = new JsonObject();
+        if (isBlank(xml)) {
+            return result;
+        }
+
+        try {
+            Document doc = parseDocument(xml);
+            Element root = doc.getDocumentElement();
+
+            // Standard metadata from root attributes
+            JsonObject metaData = new JsonObject();
+            metaData.addProperty("name", attr(root, "adtcore:name",
+                    attr(root, "name", "")));
+            metaData.addProperty("type", attr(root, "adtcore:type",
+                    attr(root, "type", "")));
+            metaData.addProperty("description", attr(root, "adtcore:description",
+                    attr(root, "description", "")));
+            metaData.addProperty("packageName", attr(root, "adtcore:packageName",
+                    attr(root, "packageName", "")));
+            metaData.addProperty("language", attr(root, "adtcore:language",
+                    attr(root, "language", "")));
+            result.add("metaData", metaData);
+
+            // All additional root attributes (non-namespace, non-standard)
+            NamedNodeMap rootAttrs = root.getAttributes();
+            for (int i = 0; i < rootAttrs.getLength(); i++) {
+                Attr a = (Attr) rootAttrs.item(i);
+                String attrName = a.getName();
+                if (attrName.startsWith("xmlns")) continue;
+                if (attrName.startsWith("adtcore:")) continue;
+                String localName = a.getLocalName() != null ? a.getLocalName() : attrName;
+                if (!metaData.has(localName)) {
+                    result.addProperty(localName, a.getValue());
+                }
+            }
+
+            // Extract all child elements as content (skip atom:link)
+            JsonObject content = new JsonObject();
+            NodeList children = root.getChildNodes();
+            for (int i = 0; i < children.getLength(); i++) {
+                Node node = children.item(i);
+                if (!(node instanceof Element)) continue;
+                Element child = (Element) node;
+                String localName = child.getLocalName() != null
+                        ? child.getLocalName() : child.getTagName();
+                if ("link".equals(localName)) continue;
+                extractElementContent(content, child, localName);
+            }
+            if (content.size() > 0) {
+                result.add("content", content);
+            }
+
+        } catch (Exception e) {
+            System.err.println("AdtXmlParser.parseDdicContent failed: " + e.getMessage());
+        }
+
+        return result;
+    }
+
+    /**
+     * Recursively extracts content from an XML element into a JsonObject.
+     * Captures all attributes and child elements/text.
+     */
+    private static void extractElementContent(JsonObject parent, Element el, String key) {
+        // Check if this is a leaf element (no child elements)
+        boolean hasChildElements = false;
+        NodeList children = el.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof Element) {
+                hasChildElements = true;
+                break;
+            }
+        }
+
+        if (!hasChildElements) {
+            // Leaf element: if it has attributes, create an object; otherwise use text value
+            NamedNodeMap attrs = el.getAttributes();
+            int nonNsAttrCount = 0;
+            for (int i = 0; i < attrs.getLength(); i++) {
+                if (!attrs.item(i).getNodeName().startsWith("xmlns")) {
+                    nonNsAttrCount++;
+                }
+            }
+
+            if (nonNsAttrCount > 0) {
+                JsonObject obj = new JsonObject();
+                for (int i = 0; i < attrs.getLength(); i++) {
+                    Attr a = (Attr) attrs.item(i);
+                    if (a.getName().startsWith("xmlns")) continue;
+                    String attrName = a.getLocalName() != null ? a.getLocalName() : a.getName();
+                    obj.addProperty(attrName, a.getValue());
+                }
+                String text = el.getTextContent();
+                if (text != null && !text.trim().isEmpty()) {
+                    obj.addProperty("value", text.trim());
+                }
+                parent.add(key, obj);
+            } else {
+                String text = el.getTextContent();
+                if (text != null && !text.trim().isEmpty()) {
+                    parent.addProperty(key, text.trim());
+                }
+            }
+            return;
+        }
+
+        // Non-leaf: create object with attributes + children
+        JsonObject obj = new JsonObject();
+        NamedNodeMap attrs = el.getAttributes();
+        for (int i = 0; i < attrs.getLength(); i++) {
+            Attr a = (Attr) attrs.item(i);
+            if (a.getName().startsWith("xmlns")) continue;
+            String attrName = a.getLocalName() != null ? a.getLocalName() : a.getName();
+            obj.addProperty(attrName, a.getValue());
+        }
+
+        for (int i = 0; i < children.getLength(); i++) {
+            Node node = children.item(i);
+            if (!(node instanceof Element)) continue;
+            Element child = (Element) node;
+            String childName = child.getLocalName() != null
+                    ? child.getLocalName() : child.getTagName();
+            extractElementContent(obj, child, childName);
+        }
+        parent.add(key, obj);
     }
 
     // ---------------------------------------------------------------
@@ -892,53 +1039,61 @@ public final class AdtXmlParser {
                         execTimeNodes.item(0).getTextContent().trim());
             }
 
-            // Metadata: column names and types
-            NodeList metadataColumns = doc.getElementsByTagName("dataPreview:metadata");
-            if (metadataColumns.getLength() == 0) {
-                metadataColumns = doc.getElementsByTagName("metadata");
+            // Columns: each <column> contains <metadata> (attributes) and <dataSet>/<data> (values)
+            NodeList columnsNodes = doc.getElementsByTagName("dataPreview:columns");
+            if (columnsNodes.getLength() == 0) {
+                columnsNodes = doc.getElementsByTagName("columns");
             }
-            java.util.List<String> columnNames = new java.util.ArrayList<>();
-            if (metadataColumns.getLength() > 0) {
-                Element metadata = (Element) metadataColumns.item(0);
-                NodeList colDefs = metadata.getElementsByTagName("dataPreview:column");
-                if (colDefs.getLength() == 0) {
-                    colDefs = metadata.getElementsByTagName("column");
+            if (columnsNodes.getLength() > 0) {
+                Element columnsEl = (Element) columnsNodes.item(0);
+                NodeList columnNodes = columnsEl.getElementsByTagName("dataPreview:column");
+                if (columnNodes.getLength() == 0) {
+                    columnNodes = columnsEl.getElementsByTagName("column");
                 }
-                for (int i = 0; i < colDefs.getLength(); i++) {
-                    Element col = (Element) colDefs.item(i);
-                    String name = attr(col, "name", attr(col, "dataPreview:name", "col_" + i));
-                    String type = attr(col, "type", attr(col, "dataPreview:type", ""));
-                    columnNames.add(name);
+                for (int i = 0; i < columnNodes.getLength(); i++) {
+                    Element colEl = (Element) columnNodes.item(i);
+
+                    // Extract metadata attributes from <metadata> child
+                    String colName = "col_" + i;
+                    String colType = "";
+                    String colDescription = "";
+                    NodeList metaNodes = colEl.getElementsByTagName("dataPreview:metadata");
+                    if (metaNodes.getLength() == 0) {
+                        metaNodes = colEl.getElementsByTagName("metadata");
+                    }
+                    if (metaNodes.getLength() > 0) {
+                        Element meta = (Element) metaNodes.item(0);
+                        colName = attr(meta, "name", attr(meta, "dataPreview:name", colName));
+                        colType = attr(meta, "type", attr(meta, "dataPreview:type", ""));
+                        colDescription = attr(meta, "description",
+                                attr(meta, "dataPreview:description", ""));
+                    }
 
                     JsonObject colObj = new JsonObject();
-                    colObj.addProperty("name", name);
-                    colObj.addProperty("type", type);
-                    colObj.add("values", new JsonArray());
-                    columns.add(colObj);
-                }
-            }
+                    colObj.addProperty("name", colName);
+                    colObj.addProperty("type", colType);
+                    if (!colDescription.isEmpty()) {
+                        colObj.addProperty("description", colDescription);
+                    }
 
-            // Data: column values
-            NodeList dataColumns = doc.getElementsByTagName("dataPreview:columns");
-            if (dataColumns.getLength() == 0) {
-                dataColumns = doc.getElementsByTagName("columns");
-            }
-            if (dataColumns.getLength() > 0) {
-                Element dataRoot = (Element) dataColumns.item(0);
-                NodeList dataCols = dataRoot.getElementsByTagName("dataPreview:dataColumn");
-                if (dataCols.getLength() == 0) {
-                    dataCols = dataRoot.getElementsByTagName("dataColumn");
-                }
-                for (int i = 0; i < dataCols.getLength() && i < columns.size(); i++) {
-                    Element dataCol = (Element) dataCols.item(i);
-                    JsonArray values = columns.get(i).getAsJsonObject().getAsJsonArray("values");
-                    NodeList entries = dataCol.getElementsByTagName("dataPreview:data");
-                    if (entries.getLength() == 0) {
-                        entries = dataCol.getElementsByTagName("data");
+                    // Extract data values from <dataSet>/<data> children
+                    JsonArray values = new JsonArray();
+                    NodeList dataSetNodes = colEl.getElementsByTagName("dataPreview:dataSet");
+                    if (dataSetNodes.getLength() == 0) {
+                        dataSetNodes = colEl.getElementsByTagName("dataSet");
                     }
-                    for (int j = 0; j < entries.getLength(); j++) {
-                        values.add(entries.item(j).getTextContent());
+                    if (dataSetNodes.getLength() > 0) {
+                        Element dataSet = (Element) dataSetNodes.item(0);
+                        NodeList dataNodes = dataSet.getElementsByTagName("dataPreview:data");
+                        if (dataNodes.getLength() == 0) {
+                            dataNodes = dataSet.getElementsByTagName("data");
+                        }
+                        for (int j = 0; j < dataNodes.getLength(); j++) {
+                            values.add(dataNodes.item(j).getTextContent());
+                        }
                     }
+                    colObj.add("values", values);
+                    columns.add(colObj);
                 }
             }
 
