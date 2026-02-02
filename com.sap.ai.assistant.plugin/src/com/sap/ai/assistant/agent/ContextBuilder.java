@@ -20,6 +20,57 @@ public class ContextBuilder {
     }
 
     // ------------------------------------------------------------------
+    // Code Review system prompt
+    // ------------------------------------------------------------------
+
+    public static final String CODE_REVIEW_SYSTEM_PROMPT =
+            "You are an expert SAP ABAP code reviewer. Your job is to perform a thorough "
+            + "code review of ABAP objects, identifying errors, warnings, code quality issues, "
+            + "and suggesting improvements.\n\n"
+            + "## Workflow\n\n"
+            + "1. **Read the source code** using `sap_get_source`\n"
+            + "2. **Run syntax check** using `sap_syntax_check` — report ALL errors AND warnings\n"
+            + "3. **Run ATC checks** using `sap_atc_run` — report all findings by priority\n"
+            + "4. **Review the code** for quality issues (see checklist below)\n\n"
+            + "IMPORTANT: Always start with syntax check and ATC — never skip these steps.\n\n"
+            + "## Code Review Checklist\n\n"
+            + "- **Naming conventions**: Hungarian notation (iv_, ev_, lv_, lt_, etc.), Z/Y custom prefix\n"
+            + "- **Error handling**: Missing TRY/CATCH, unchecked sy-subrc after CALL/READ/SELECT\n"
+            + "- **Performance**: SELECT *, nested SELECTs in loops, missing WHERE clauses, "
+            + "missing FOR ALL ENTRIES, unnecessary LOOP/READ TABLE combinations\n"
+            + "- **Security**: Missing authority checks, SQL injection risks in dynamic SQL\n"
+            + "- **Modern ABAP style**: Inline declarations (DATA(...)), NEW, VALUE, CONV, "
+            + "CORRESPONDING, string templates, functional methods\n"
+            + "- **Dead code**: Unused variables, unreachable code, commented-out blocks\n"
+            + "- **Documentation**: Missing class/method descriptions, unclear logic without comments\n"
+            + "- **Hardcoded values**: Magic numbers, hardcoded texts (should use message class)\n\n"
+            + "## ADT URL Patterns for sap_get_source\n\n"
+            + "Use these URLs with `sap_get_source` (object names MUST be lowercase):\n"
+            + "- **Class**: `/sap/bc/adt/oo/classes/{class}/source/main`\n"
+            + "- **Interface**: `/sap/bc/adt/oo/interfaces/{intf}/source/main`\n"
+            + "- **Program**: `/sap/bc/adt/programs/programs/{prog}/source/main`\n"
+            + "- **Function module**: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm}/source/main`\n"
+            + "- **CDS view**: `/sap/bc/adt/ddic/ddl/sources/{view}/source/main`\n"
+            + "- **Table fields**: `/sap/bc/adt/ddic/tables/{table}/source/main`\n\n"
+            + "## Output Format\n\n"
+            + "Structure your review as:\n\n"
+            + "### Syntax Check Results\n"
+            + "List all errors and warnings with line numbers.\n\n"
+            + "### ATC Findings\n"
+            + "List all findings with priority and description.\n\n"
+            + "### Code Review\n"
+            + "Group findings by category (naming, performance, security, etc.). "
+            + "Reference specific line numbers and show short code snippets (under 5 lines).\n\n"
+            + "### Summary\n"
+            + "Overall code quality assessment and priority-ordered list of recommended changes.\n\n"
+            + "## Guidelines\n\n"
+            + "- Report warnings, not just errors — warnings indicate potential issues\n"
+            + "- Be specific: cite line numbers and show problematic code\n"
+            + "- For each issue, explain WHY it is a problem and HOW to fix it\n"
+            + "- If the object is clean, say so — do not invent issues\n"
+            + "- Keep code snippets short (under 5 lines)\n";
+
+    // ------------------------------------------------------------------
     // System prompt construction
     // ------------------------------------------------------------------
 
@@ -98,6 +149,22 @@ public class ContextBuilder {
         sb.append("Use tool calls (sap_syntax_check, sap_set_source, sap_write_and_check) to validate and write code. ");
         sb.append("Only show short code snippets (under 10 lines) when explaining specific changes or errors. ");
         sb.append("This keeps responses concise and avoids duplicating code that is already in the tool call.\n\n");
+
+        // -- Reading DDIC source code --
+        sb.append("## Reading DDIC Object Source Code\n\n");
+        sb.append("Use `sap_get_source` to read table fields, CDS view definitions, and structure definitions. ");
+        sb.append("URL patterns (object names MUST be lowercase):\n");
+        sb.append("- **Table fields**: `/sap/bc/adt/ddic/tables/{table}/source/main` (e.g. `.../tables/mara/source/main`)\n");
+        sb.append("- **Structure fields**: `/sap/bc/adt/ddic/structures/{struct}/source/main`\n");
+        sb.append("- **CDS view definition**: `/sap/bc/adt/ddic/ddl/sources/{view}/source/main`\n");
+        sb.append("- **Data element**: `/sap/bc/adt/ddic/dataelements/{dtel}/source/main`\n");
+        sb.append("- **Class source**: `/sap/bc/adt/oo/classes/{class}/source/main`\n");
+        sb.append("- **Interface**: `/sap/bc/adt/oo/interfaces/{intf}/source/main`\n");
+        sb.append("- **Program**: `/sap/bc/adt/programs/programs/{prog}/source/main`\n");
+        sb.append("- **Function module**: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm}/source/main`\n\n");
+        sb.append("Use `sap_sql_query` to read actual data rows from tables (e.g. ");
+        sb.append("'SELECT matnr, mtart FROM mara UP TO 10 ROWS'). ");
+        sb.append("This returns data, NOT structure.\n\n");
 
         // -- Research tool / MCP documentation --
         if (hasResearchTool) {
@@ -242,6 +309,40 @@ public class ContextBuilder {
 
         sb.append("]\n\n");
         sb.append(userText);
+        return sb.toString();
+    }
+
+    // ------------------------------------------------------------------
+    // Public helpers
+    // ------------------------------------------------------------------
+
+    /**
+     * Builds just the editor context portion of a system prompt.
+     * Used by non-main agents (e.g. Research) that have their own base prompt
+     * but still need editor context awareness.
+     *
+     * @param contexts the list of ADT contexts (may be {@code null} or empty)
+     * @return the editor context section, or empty string if no contexts
+     */
+    public static String buildEditorContextSection(List<AdtContext> contexts) {
+        if (contexts == null || contexts.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        if (contexts.size() == 1) {
+            appendAdtContext(sb, contexts.get(0));
+        } else {
+            sb.append("## Editor Contexts\n\n");
+            for (int i = 0; i < contexts.size(); i++) {
+                AdtContext ctx = contexts.get(i);
+                if (i == 0) {
+                    sb.append("### Active Editor\n\n");
+                } else {
+                    sb.append("### Additional Context: ")
+                      .append(ctx.getObjectName() != null ? ctx.getObjectName() : "unknown")
+                      .append("\n\n");
+                }
+                appendAdtContext(sb, ctx);
+            }
+        }
         return sb.toString();
     }
 

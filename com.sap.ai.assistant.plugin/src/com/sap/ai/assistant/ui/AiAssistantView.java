@@ -9,6 +9,7 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
@@ -33,6 +34,7 @@ import com.sap.ai.assistant.mcp.McpServerConfig;
 import com.sap.ai.assistant.mcp.McpToolAdapter;
 import com.sap.ai.assistant.mcp.McpToolDefinitionParser;
 import com.sap.ai.assistant.model.AdtContext;
+import com.sap.ai.assistant.model.AgentMode;
 import com.sap.ai.assistant.model.ChatConversation;
 import com.sap.ai.assistant.model.ChatMessage;
 import com.sap.ai.assistant.model.DiffRequest;
@@ -48,6 +50,7 @@ import com.sap.ai.assistant.model.TransportSelectionRequest;
 import com.sap.ai.assistant.preferences.PreferenceConstants;
 import com.sap.ai.assistant.sap.AdtCredentialProvider;
 import com.sap.ai.assistant.sap.AdtRestClient;
+import com.sap.ai.assistant.tools.AtcRunTool;
 import com.sap.ai.assistant.tools.FindDefinitionTool;
 import com.sap.ai.assistant.tools.GetSourceTool;
 import com.sap.ai.assistant.tools.NodeContentsTool;
@@ -56,6 +59,8 @@ import com.sap.ai.assistant.tools.ResearchTool;
 import com.sap.ai.assistant.tools.SapTool;
 import com.sap.ai.assistant.tools.SapToolRegistry;
 import com.sap.ai.assistant.tools.SearchObjectTool;
+import com.sap.ai.assistant.tools.SyntaxCheckTool;
+import com.sap.ai.assistant.tools.SqlQueryTool;
 import com.sap.ai.assistant.tools.TypeInfoTool;
 import com.sap.ai.assistant.tools.UsageReferencesTool;
 
@@ -74,8 +79,8 @@ public class AiAssistantView extends ViewPart {
 
     // ---- Widgets ----
     private SystemSelectorComposite systemSelector;
+    private Combo agentSelector;
     private Label modelLabel;
-    private Button autoFixButton;
     private ChatComposite chatComposite;
     private DevLogComposite devLog;
 
@@ -154,16 +159,18 @@ public class AiAssistantView extends ViewPart {
         systemSelector = new SystemSelectorComposite(toolbar, SWT.NONE);
         systemSelector.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
+        // Agent mode selector
+        agentSelector = new Combo(toolbar, SWT.DROP_DOWN | SWT.READ_ONLY);
+        for (AgentMode mode : AgentMode.values()) {
+            agentSelector.add(mode.getDisplayName());
+        }
+        agentSelector.select(0);
+        agentSelector.setToolTipText("Select which agent to chat with");
+
         // Model label
         modelLabel = new Label(toolbar, SWT.NONE);
         modelLabel.setForeground(Display.getDefault().getSystemColor(SWT.COLOR_DARK_GRAY));
         modelLabel.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
-
-        // Auto-Fix button
-        autoFixButton = new Button(toolbar, SWT.PUSH);
-        autoFixButton.setText("Auto-Fix");
-        autoFixButton.setToolTipText("Fix all syntax errors and ATC findings in the current editor object");
-        autoFixButton.addListener(SWT.Selection, e -> handleAutoFix());
 
         // Preferences button
         Button prefsButton = new Button(toolbar, SWT.PUSH);
@@ -198,7 +205,7 @@ public class AiAssistantView extends ViewPart {
         contextTracker = new EditorContextTracker();
         contextTracker.setOnContextChanged(() -> {
             Display.getDefault().asyncExec(() -> {
-                updateAutoFixButton();
+
                 refreshAvailableContexts();
             });
         });
@@ -290,6 +297,11 @@ public class AiAssistantView extends ViewPart {
         LlmProviderConfig researchConfig = new LlmProviderConfig(
                 provider, apiKey, effectiveResearchModel, baseUrl, maxTokens > 0 ? maxTokens : 8192);
 
+        // Agent mode
+        int agentIdx = agentSelector.getSelectionIndex();
+        AgentMode selectedAgentMode = (agentIdx >= 0 && agentIdx < AgentMode.values().length)
+                ? AgentMode.values()[agentIdx] : AgentMode.MAIN;
+
         // Editor contexts from the dropdown selector
         List<AdtContext> selectedContexts = chatComposite.getSelectedContexts();
 
@@ -348,10 +360,11 @@ public class AiAssistantView extends ViewPart {
             }
         }
 
-        // Determine conversation key from selected system
-        String systemKey = selectedSystem != null
+        // Determine conversation key from selected system + agent mode
+        String systemKey = (selectedSystem != null
                 ? selectedSystem.getProjectName()
-                : "_default_";
+                : "_default_")
+                + "_" + selectedAgentMode.name();
 
         // Build system prompt with selected editor contexts
         String systemPrompt = (selectedContexts != null && !selectedContexts.isEmpty())
@@ -376,6 +389,7 @@ public class AiAssistantView extends ViewPart {
         final ChatConversation finalConversation = conversation;
         final List<AdtContext> finalEditorContexts = selectedContexts;
         final AdtCredentialProvider.AdtSessionData finalAdtSession = adtSessionData;
+        final AgentMode finalAgentMode = selectedAgentMode;
 
         // Read MCP server configs
         String mcpServersJson = store.getString(PreferenceConstants.MCP_SERVERS);
@@ -456,37 +470,12 @@ public class AiAssistantView extends ViewPart {
                         researchTools.add(new FindDefinitionTool(restClient));
                         researchTools.add(new UsageReferencesTool(restClient));
                         researchTools.add(new TypeInfoTool(restClient));
+                        researchTools.add(new SqlQueryTool(restClient));
                     }
                     researchTools.addAll(mcpTools);
 
-                    if (!researchTools.isEmpty()) {
-                        // Create research LLM provider (same provider, potentially different model)
-                        LlmProvider researchLlmProvider = LlmProviderFactory.create(finalResearchConfig);
-                        SapToolRegistry researchRegistry = SapToolRegistry.withToolsOnly(researchTools);
-                        ResearchTool researchTool = new ResearchTool(researchLlmProvider, researchRegistry);
-                        mainAdditionalTools.add(researchTool);
-                        hasResearchTool = true;
-                    }
-
-                    // Build main tool registry (all SAP tools + research tool)
-                    SapToolRegistry toolRegistry = null;
-                    if (finalSystem != null) {
-                        toolRegistry = new SapToolRegistry(restClient, mainAdditionalTools);
-                    } else if (!mainAdditionalTools.isEmpty()) {
-                        toolRegistry = SapToolRegistry.withToolsOnly(mainAdditionalTools);
-                    }
-
-                    // Rebuild system prompt with research tool awareness + transport info
-                    String updatedPrompt = ContextBuilder.buildSystemPrompt(
-                            finalEditorContexts, toolRegistry, hasResearchTool,
-                            sessionTransport);
-                    finalConversation.setSystemPrompt(updatedPrompt);
-
-                    // Create and run agent loop (pass restClient for diff preview)
-                    AgentLoop agent = new AgentLoop(llmProvider, toolRegistry, restClient, finalConfig);
-                    agent.setSessionTransport(sessionTransport);
-
-                    agent.run(finalConversation, new AgentCallback() {
+                    // Shared callback for both main and research agents
+                    AgentCallback agentCallback = new AgentCallback() {
 
                         @Override
                         public void onTextToken(String token) {
@@ -512,7 +501,6 @@ public class AiAssistantView extends ViewPart {
                                 diffRequest.setDecision(DiffRequest.Decision.REJECTED);
                                 return;
                             }
-                            // Show diff widget in UI; agent thread blocks on awaitDecision()
                             display.asyncExec(() -> chatComposite.addDiffPreview(diffRequest));
                         }
 
@@ -539,7 +527,6 @@ public class AiAssistantView extends ViewPart {
                         public void onComplete(ChatMessage finalMessage) {
                             display.asyncExec(() -> {
                                 chatComposite.finishStreamingMessage();
-                                // Show per-turn token usage
                                 if (usageTracker != null) {
                                     int turnIn = usageTracker.getTotalInputTokens() - turnStartIn;
                                     int turnOut = usageTracker.getTotalOutputTokens() - turnStartOut;
@@ -550,7 +537,7 @@ public class AiAssistantView extends ViewPart {
                                     }
                                 }
                                 chatComposite.setRunning(false);
-                                updateAutoFixButton();
+                
                                 refreshOpenEditors();
                             });
                         }
@@ -562,7 +549,7 @@ public class AiAssistantView extends ViewPart {
                                 chatComposite.addUserMessage(
                                         "Error: " + error.getMessage());
                                 chatComposite.setRunning(false);
-                                updateAutoFixButton();
+                
                             });
                         }
 
@@ -575,7 +562,74 @@ public class AiAssistantView extends ViewPart {
                                 }
                             });
                         }
-                    });
+                    };
+
+                    // ---- Research agent mode ----
+                    if (finalAgentMode == AgentMode.RESEARCH) {
+                        LlmProvider researchLlm = LlmProviderFactory.create(finalResearchConfig);
+                        SapToolRegistry researchRegistry = SapToolRegistry.withToolsOnly(researchTools);
+
+                        String researchPrompt = ResearchTool.SYSTEM_PROMPT;
+                        String editorSection = ContextBuilder.buildEditorContextSection(finalEditorContexts);
+                        if (!editorSection.isEmpty()) {
+                            researchPrompt += "\n\n" + editorSection;
+                        }
+                        finalConversation.setSystemPrompt(researchPrompt);
+
+                        AgentLoop researchAgent = new AgentLoop(
+                                researchLlm, researchRegistry, restClient, finalResearchConfig);
+                        researchAgent.run(finalConversation, agentCallback);
+                        return Status.OK_STATUS;
+                    }
+
+                    // ---- Code Review agent mode ----
+                    if (finalAgentMode == AgentMode.CODE_REVIEW) {
+                        java.util.List<SapTool> reviewTools = new java.util.ArrayList<>(researchTools);
+                        if (restClient != null) {
+                            reviewTools.add(new SyntaxCheckTool(restClient));
+                            reviewTools.add(new AtcRunTool(restClient));
+                        }
+
+                        LlmProvider reviewLlm = LlmProviderFactory.create(finalResearchConfig);
+                        SapToolRegistry reviewRegistry = SapToolRegistry.withToolsOnly(reviewTools);
+
+                        String reviewPrompt = ContextBuilder.CODE_REVIEW_SYSTEM_PROMPT;
+                        String editorSection = ContextBuilder.buildEditorContextSection(finalEditorContexts);
+                        if (!editorSection.isEmpty()) {
+                            reviewPrompt += "\n\n" + editorSection;
+                        }
+                        finalConversation.setSystemPrompt(reviewPrompt);
+
+                        AgentLoop reviewAgent = new AgentLoop(
+                                reviewLlm, reviewRegistry, restClient, finalResearchConfig);
+                        reviewAgent.run(finalConversation, agentCallback);
+                        return Status.OK_STATUS;
+                    }
+
+                    // ---- Main agent mode ----
+                    if (!researchTools.isEmpty()) {
+                        LlmProvider researchLlmProvider = LlmProviderFactory.create(finalResearchConfig);
+                        SapToolRegistry researchRegistry = SapToolRegistry.withToolsOnly(researchTools);
+                        ResearchTool researchTool = new ResearchTool(researchLlmProvider, researchRegistry);
+                        mainAdditionalTools.add(researchTool);
+                        hasResearchTool = true;
+                    }
+
+                    SapToolRegistry toolRegistry = null;
+                    if (finalSystem != null) {
+                        toolRegistry = new SapToolRegistry(restClient, mainAdditionalTools);
+                    } else if (!mainAdditionalTools.isEmpty()) {
+                        toolRegistry = SapToolRegistry.withToolsOnly(mainAdditionalTools);
+                    }
+
+                    String updatedPrompt = ContextBuilder.buildSystemPrompt(
+                            finalEditorContexts, toolRegistry, hasResearchTool,
+                            sessionTransport);
+                    finalConversation.setSystemPrompt(updatedPrompt);
+
+                    AgentLoop agent = new AgentLoop(llmProvider, toolRegistry, restClient, finalConfig);
+                    agent.setSessionTransport(sessionTransport);
+                    agent.run(finalConversation, agentCallback);
 
                     // Persist transport selection for subsequent messages
                     sessionTransport = agent.getSessionTransport();
@@ -644,6 +698,9 @@ public class AiAssistantView extends ViewPart {
         chatComposite.setRunning(false);
         chatComposite.clearContextSelections();
         systemSelector.setEnabled(true);
+        if (agentSelector != null && !agentSelector.isDisposed()) {
+            agentSelector.select(0);
+        }
         sessionTransport = null;
 
         if (usageTracker != null) {
@@ -660,60 +717,6 @@ public class AiAssistantView extends ViewPart {
         // Re-populate available contexts and auto-select active editor
         refreshAvailableContexts();
         autoSelectActiveEditor();
-    }
-
-    // ==================================================================
-    // Auto-Fix
-    // ==================================================================
-
-    private void handleAutoFix() {
-        AdtContext context = (contextTracker != null) ? contextTracker.getCurrentContext() : null;
-
-        if (context == null || context.getObjectName() == null || context.getObjectName().isEmpty()) {
-            chatComposite.addUserMessage(
-                    "Error: No ABAP object is currently open in the editor. "
-                    + "Please open an ABAP object first.");
-            return;
-        }
-
-        String prompt = buildAutoFixPrompt(context);
-        handleSend(prompt);
-    }
-
-    private String buildAutoFixPrompt(AdtContext context) {
-        StringBuilder prompt = new StringBuilder();
-        prompt.append("AUTO-FIX REQUEST: Please fix all errors and issues in the ABAP object \"");
-        prompt.append(context.getObjectName());
-        prompt.append("\".\n\n");
-
-        prompt.append("Please follow this workflow:\n");
-        prompt.append("1. Read the current source code using sap_get_source\n");
-        prompt.append("2. Run a syntax check using sap_syntax_check\n");
-        prompt.append("3. Run ATC checks using sap_atc_run\n");
-        prompt.append("4. Analyze ALL errors, warnings, and ATC findings\n");
-        prompt.append("5. Fix all issues in the source code\n");
-        prompt.append("6. Write the corrected source code using sap_write_and_check\n");
-        prompt.append("7. Verify the fix by running syntax check again\n");
-        prompt.append("8. If errors remain, iterate until all issues are resolved\n\n");
-
-        List<String> errors = context.getErrors();
-        if (errors != null && !errors.isEmpty()) {
-            prompt.append("Known errors/warnings from the editor:\n");
-            for (String error : errors) {
-                prompt.append("- ").append(error).append("\n");
-            }
-            prompt.append("\n");
-        }
-
-        prompt.append("Fix everything and ensure the object compiles cleanly with no ATC findings.");
-        return prompt.toString();
-    }
-
-    private void updateAutoFixButton() {
-        if (autoFixButton == null || autoFixButton.isDisposed()) return;
-        boolean isRunning = currentJob != null
-                && currentJob.getState() == Job.RUNNING;
-        autoFixButton.setEnabled(!isRunning);
     }
 
     // ==================================================================

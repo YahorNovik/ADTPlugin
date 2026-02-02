@@ -187,6 +187,9 @@ public class SyntaxCheckTool extends AbstractSapTool {
 
         JsonObject output = new JsonObject();
         output.addProperty("hasErrors", hasErrors(results));
+        output.addProperty("hasWarnings", hasSeverity(results, "warning", "W"));
+        output.addProperty("errorCount", countBySeverity(results, "error", "E"));
+        output.addProperty("warningCount", countBySeverity(results, "warning", "W"));
         output.addProperty("messageCount", results.size());
         output.add("messages", results);
         return ToolResult.success(null, output.toString());
@@ -227,14 +230,30 @@ public class SyntaxCheckTool extends AbstractSapTool {
     }
 
     private boolean hasErrors(JsonArray messages) {
+        return hasSeverity(messages, "error", "E");
+    }
+
+    private boolean hasSeverity(JsonArray messages, String name, String code) {
         for (int i = 0; i < messages.size(); i++) {
             JsonObject msg = messages.get(i).getAsJsonObject();
             String severity = msg.has("severity") ? msg.get("severity").getAsString() : "";
-            if (severity.equalsIgnoreCase("error") || severity.equalsIgnoreCase("E")) {
+            if (severity.equalsIgnoreCase(name) || severity.equalsIgnoreCase(code)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private int countBySeverity(JsonArray messages, String name, String code) {
+        int count = 0;
+        for (int i = 0; i < messages.size(); i++) {
+            JsonObject msg = messages.get(i).getAsJsonObject();
+            String severity = msg.has("severity") ? msg.get("severity").getAsString() : "";
+            if (severity.equalsIgnoreCase(name) || severity.equalsIgnoreCase(code)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private String escapeXml(String value) {
