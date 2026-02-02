@@ -56,6 +56,7 @@ import com.sap.ai.assistant.tools.ResearchTool;
 import com.sap.ai.assistant.tools.SapTool;
 import com.sap.ai.assistant.tools.SapToolRegistry;
 import com.sap.ai.assistant.tools.SearchObjectTool;
+import com.sap.ai.assistant.tools.TypeInfoTool;
 import com.sap.ai.assistant.tools.UsageReferencesTool;
 
 /**
@@ -454,6 +455,7 @@ public class AiAssistantView extends ViewPart {
                         researchTools.add(new NodeContentsTool(restClient));
                         researchTools.add(new FindDefinitionTool(restClient));
                         researchTools.add(new UsageReferencesTool(restClient));
+                        researchTools.add(new TypeInfoTool(restClient));
                     }
                     researchTools.addAll(mcpTools);
 
