@@ -51,7 +51,21 @@ public class ContextBuilder {
             + "- **Program**: `/sap/bc/adt/programs/programs/{prog}/source/main`\n"
             + "- **Function module**: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm}/source/main`\n"
             + "- **CDS view**: `/sap/bc/adt/ddic/ddl/sources/{view}/source/main`\n"
-            + "- **Table fields**: `/sap/bc/adt/ddic/tables/{table}/source/main`\n\n"
+            + "- **Table fields**: `/sap/bc/adt/ddic/tables/{table}/source/main`\n"
+            + "- **Structure fields**: `/sap/bc/adt/ddic/structures/{struct}/source/main`\n"
+            + "- **Data element**: `/sap/bc/adt/ddic/dataelements/{dtel}/source/main`\n"
+            + "- **Domain**: `/sap/bc/adt/ddic/domains/{domain}/source/main`\n\n"
+            + "## Reading Data vs Structure\n\n"
+            + "| Need | Tool | Example |\n"
+            + "|------|------|---------|\n"
+            + "| **Field definitions** | `sap_get_source` | `.../tables/mara/source/main` → field names, types |\n"
+            + "| **Data rows** | `sap_sql_query` | `SELECT matnr FROM mara UP TO 5 ROWS` → row values |\n"
+            + "| **Data element details** | `sap_type_info` | name='MATNR' → domain, type, labels |\n\n"
+            + "## SAP Documentation (MCP Tools)\n\n"
+            + "Use these for documentation lookup during review:\n"
+            + "- `mcp_sap_help_search` — ABAP keyword reference, BAdIs, SAP standard behavior\n"
+            + "- `mcp_sap_help_get` — fetch full SAP Help page\n"
+            + "- `mcp_sap_community_search` — best practices and community solutions\n\n"
             + "## Output Format\n\n"
             + "Structure your review as:\n\n"
             + "### Syntax Check Results\n"
@@ -150,38 +164,52 @@ public class ContextBuilder {
         sb.append("Only show short code snippets (under 10 lines) when explaining specific changes or errors. ");
         sb.append("This keeps responses concise and avoids duplicating code that is already in the tool call.\n\n");
 
-        // -- Reading DDIC source code --
-        sb.append("## Reading DDIC Object Source Code\n\n");
-        sb.append("Use `sap_get_source` to read table fields, CDS view definitions, and structure definitions. ");
+        // -- Reading source code and data --
+        sb.append("## Reading Source Code and Data\n\n");
+        sb.append("Use `sap_get_source` to read source code and field definitions. ");
         sb.append("URL patterns (object names MUST be lowercase):\n");
         sb.append("- **Table fields**: `/sap/bc/adt/ddic/tables/{table}/source/main` (e.g. `.../tables/mara/source/main`)\n");
         sb.append("- **Structure fields**: `/sap/bc/adt/ddic/structures/{struct}/source/main`\n");
-        sb.append("- **CDS view definition**: `/sap/bc/adt/ddic/ddl/sources/{view}/source/main`\n");
+        sb.append("- **CDS view (DDL)**: `/sap/bc/adt/ddic/ddl/sources/{view}/source/main`\n");
         sb.append("- **Data element**: `/sap/bc/adt/ddic/dataelements/{dtel}/source/main`\n");
-        sb.append("- **Class source**: `/sap/bc/adt/oo/classes/{class}/source/main`\n");
+        sb.append("- **Domain**: `/sap/bc/adt/ddic/domains/{domain}/source/main`\n");
+        sb.append("- **Class**: `/sap/bc/adt/oo/classes/{class}/source/main`\n");
         sb.append("- **Interface**: `/sap/bc/adt/oo/interfaces/{intf}/source/main`\n");
         sb.append("- **Program**: `/sap/bc/adt/programs/programs/{prog}/source/main`\n");
         sb.append("- **Function module**: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm}/source/main`\n\n");
-        sb.append("Use `sap_sql_query` to read actual data rows from tables (e.g. ");
-        sb.append("'SELECT matnr, mtart FROM mara UP TO 10 ROWS'). ");
-        sb.append("This returns data, NOT structure.\n\n");
+        sb.append("**Reading data vs structure** — these tools serve DIFFERENT purposes:\n\n");
+        sb.append("| Need | Tool | Example |\n");
+        sb.append("|------|------|---------|\n");
+        sb.append("| **Table/structure field definitions** | `sap_get_source` | `.../tables/mara/source/main` → field names, types, lengths |\n");
+        sb.append("| **Actual data rows from a table** | `sap_sql_query` | `SELECT matnr, mtart FROM mara UP TO 10 ROWS` → row values |\n");
+        sb.append("| **Data element/domain details** | `sap_type_info` | name='MATNR' → domain, data type, length, labels |\n\n");
+        sb.append("`sap_sql_query` executes real ABAP SQL against the database and returns DATA ROWS (not structure). ");
+        sb.append("Example: `SELECT carrid, connid, fldate FROM sflight UP TO 5 ROWS`.\n\n");
 
         // -- Research tool / MCP documentation --
         if (hasResearchTool) {
             sb.append("## Research Tool\n\n");
             sb.append("You have a `research` tool that delegates queries to a specialized sub-agent. ");
             sb.append("Use it when you need to:\n");
-            sb.append("- Look up SAP documentation or ABAP keyword reference\n");
-            sb.append("- Search the SAP Help Portal for configuration, BAdIs, or enhancement spots\n");
+            sb.append("- Look up ABAP keyword reference or SAP Help Portal documentation\n");
+            sb.append("- Search for BAdIs, enhancement spots, or configuration details\n");
             sb.append("- Read and understand existing SAP object source code or structure\n");
-            sb.append("- Find class/interface definitions, method signatures, or data element details\n\n");
+            sb.append("- Find class/interface definitions, method signatures, or data element details\n");
+            sb.append("- Search SAP Community for real-world examples and solutions\n\n");
             sb.append("IMPORTANT: If you encounter a syntax error you cannot fix after one attempt, ");
             sb.append("use the `research` tool to look up the correct ABAP syntax before trying again.\n");
-            sb.append("The research sub-agent has access to MCP documentation servers and SAP read tools.\n\n");
+            sb.append("The research sub-agent has access to SAP read tools and documentation tools ");
+            sb.append("(SAP Help Portal, SAP Community, SAPUI5/CAP docs).\n\n");
         } else {
-            sb.append("## SAP Documentation\n\n");
-            sb.append("MCP documentation tools (prefixed with mcp_) can search SAP documentation, ");
-            sb.append("ABAP keyword reference, and SAP Help Portal.\n\n");
+            sb.append("## SAP Documentation (MCP Tools)\n\n");
+            sb.append("Use these tools to look up SAP documentation:\n");
+            sb.append("- `mcp_sap_help_search` — search SAP Help Portal (ABAP keyword reference, ");
+            sb.append("transactions, BAdIs, configuration)\n");
+            sb.append("- `mcp_sap_help_get` — fetch full SAP Help page content\n");
+            sb.append("- `mcp_sap_community_search` — search SAP Community for blog posts and solutions\n");
+            sb.append("- `mcp_sap_docs_search` — search SAPUI5, CAP, and OpenUI5 documentation\n");
+            sb.append("- `mcp_sap_docs_get` — fetch full documentation page content\n\n");
+            sb.append("**Workflow**: Search first, then fetch full content for relevant results.\n\n");
         }
 
         // -- ADT contexts --

@@ -30,39 +30,46 @@ public class ResearchTool implements SapTool {
     public static final String NAME = "research";
 
     private static final int DEFAULT_MAX_ROUNDS = 10;
-    private static final int DEFAULT_MAX_INPUT_TOKENS = 20_000;
+    private static final int DEFAULT_MAX_INPUT_TOKENS = 50_000;
 
-    private static final String SYSTEM_PROMPT =
+    public static final String SYSTEM_PROMPT =
             "You are a research assistant for SAP ABAP development. Your job is to find "
-            + "information using the available documentation and code-reading tools, then "
-            + "provide a clear, concise answer.\n\n"
-            + "## Available Tools\n\n"
-            + "**SAP Read Tools:**\n"
-            + "- `sap_search_object` — search for ABAP objects by name pattern and type\n"
-            + "- `sap_get_source` — read source code of any ABAP object (see URL patterns below)\n"
-            + "- `sap_object_structure` — get the structure/hierarchy of an ABAP object\n"
-            + "- `sap_node_contents` — list children of a package or namespace\n"
-            + "- `sap_find_definition` — navigate to where a symbol is defined\n"
-            + "- `sap_usage_references` — find all places where a symbol is used\n"
-            + "- `sap_type_info` — get DDIC type info (data element, domain, table type) by name\n\n"
-            + "**MCP Documentation Tools** (prefixed with `mcp_`):\n"
-            + "These tools search SAP documentation, ABAP keyword reference, and SAP Help Portal.\n\n"
+            + "information using the available tools, then provide a clear, concise answer.\n\n"
             + "## ADT URL Patterns for sap_get_source\n\n"
-            + "Use these URLs with `sap_get_source` to read DDIC object definitions:\n"
-            + "- Table fields: `/sap/bc/adt/ddic/tables/{table}/source/main` (e.g. `.../tables/mara/source/main`)\n"
-            + "- Structure: `/sap/bc/adt/ddic/structures/{struct}/source/main`\n"
-            + "- Data element: `/sap/bc/adt/ddic/dataelements/{dtel}/source/main`\n"
-            + "- Domain: `/sap/bc/adt/ddic/domains/{domain}/source/main`\n"
-            + "- Class: `/sap/bc/adt/oo/classes/{class}/source/main`\n"
-            + "- Interface: `/sap/bc/adt/oo/interfaces/{intf}/source/main`\n"
-            + "- Program: `/sap/bc/adt/programs/programs/{prog}/source/main`\n"
-            + "- Function module: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm}/source/main`\n\n"
-            + "**IMPORTANT:** Object names in URLs must be lowercase.\n\n"
+            + "Use `sap_get_source` to read source code and field definitions. "
+            + "Object names in URLs MUST be lowercase:\n"
+            + "- **Table fields**: `/sap/bc/adt/ddic/tables/{table}/source/main` (e.g. `.../tables/mara/source/main`)\n"
+            + "- **Structure fields**: `/sap/bc/adt/ddic/structures/{struct}/source/main`\n"
+            + "- **CDS view (DDL)**: `/sap/bc/adt/ddic/ddl/sources/{view}/source/main`\n"
+            + "- **Data element**: `/sap/bc/adt/ddic/dataelements/{dtel}/source/main`\n"
+            + "- **Domain**: `/sap/bc/adt/ddic/domains/{domain}/source/main`\n"
+            + "- **Class**: `/sap/bc/adt/oo/classes/{class}/source/main`\n"
+            + "- **Interface**: `/sap/bc/adt/oo/interfaces/{intf}/source/main`\n"
+            + "- **Program**: `/sap/bc/adt/programs/programs/{prog}/source/main`\n"
+            + "- **Function module**: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm}/source/main`\n\n"
+            + "## Reading Data vs Structure\n\n"
+            + "These two tools serve DIFFERENT purposes — do NOT confuse them:\n\n"
+            + "| Need | Tool | Example |\n"
+            + "|------|------|---------|\n"
+            + "| **Table/structure field definitions** | `sap_get_source` | `.../tables/mara/source/main` → returns field names, types, lengths |\n"
+            + "| **Actual data rows from a table** | `sap_sql_query` | `SELECT matnr, mtart FROM mara UP TO 10 ROWS` → returns row values |\n"
+            + "| **Data element/domain details** | `sap_type_info` | name='MATNR' → returns domain, data type, length, labels |\n\n"
+            + "`sap_sql_query` executes real ABAP SQL against the database and returns DATA ROWS. "
+            + "It does NOT return table structure or field definitions. "
+            + "Example: `SELECT carrid, connid, fldate FROM sflight UP TO 5 ROWS`.\n\n"
+            + "## SAP Documentation (MCP Tools)\n\n"
+            + "Use these tools to look up SAP documentation:\n"
+            + "- `mcp_sap_help_search` — search SAP Help Portal (ABAP keyword reference, "
+            + "transactions, BAdIs, configuration, enhancement spots)\n"
+            + "- `mcp_sap_help_get` — fetch full SAP Help page content after finding a result\n"
+            + "- `mcp_sap_community_search` — search SAP Community for blog posts, "
+            + "real-world examples, and solutions\n"
+            + "- `mcp_sap_docs_search` — search SAPUI5, CAP, and OpenUI5 documentation\n"
+            + "- `mcp_sap_docs_get` — fetch full documentation page content\n\n"
+            + "**Workflow**: Search first → then fetch full content for relevant results.\n\n"
             + "## Guidelines\n\n"
-            + "- To look up a table's fields, use `sap_get_source` with the table's source URL.\n"
-            + "- To look up a data element or domain, use `sap_type_info` with its name.\n"
             + "- Always cite which tool/source provided the information.\n"
-            + "- If the first search doesn't find what you need, try different search terms or URL patterns.\n"
+            + "- If the first search doesn't find what you need, try different search terms.\n"
             + "- Summarize findings concisely so the calling agent can act on them.\n";
 
     private final LlmProvider llmProvider;
@@ -70,6 +77,7 @@ public class ResearchTool implements SapTool {
     private final int maxRounds;
     private final int maxInputTokens;
     private final ToolDefinition definition;
+    private AgentCallback parentCallback;
 
     /**
      * Creates a new research tool.
@@ -96,6 +104,14 @@ public class ResearchTool implements SapTool {
         this.maxRounds = maxRounds;
         this.maxInputTokens = maxInputTokens;
         this.definition = buildDefinition();
+    }
+
+    /**
+     * Sets the parent callback so sub-agent log entries can be forwarded
+     * to the main agent's DevLog.
+     */
+    public void setParentCallback(AgentCallback callback) {
+        this.parentCallback = callback;
     }
 
     @Override
@@ -127,7 +143,7 @@ public class ResearchTool implements SapTool {
                 llmProvider, toolRegistry, null, null,
                 maxRounds, maxInputTokens);
 
-        CollectingCallback callback = new CollectingCallback();
+        CollectingCallback callback = new CollectingCallback(parentCallback);
         subLoop.run(conversation, callback);
 
         if (callback.error != null) {
@@ -178,8 +194,13 @@ public class ResearchTool implements SapTool {
      */
     private static class CollectingCallback implements AgentCallback {
 
+        private final AgentCallback parent;
         String result;
         String error;
+
+        CollectingCallback(AgentCallback parent) {
+            this.parent = parent;
+        }
 
         @Override
         public void onTextToken(String token) {
@@ -210,7 +231,10 @@ public class ResearchTool implements SapTool {
 
         @Override
         public void onRequestComplete(RequestLogEntry entry) {
-            // No-op for sub-agent
+            // Forward to parent callback for DevLog visibility
+            if (parent != null) {
+                parent.onRequestComplete(entry);
+            }
         }
 
         @Override
