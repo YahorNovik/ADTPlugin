@@ -88,6 +88,7 @@ public class ContextBuilder {
         sb.append("**Other:**\n");
         sb.append("- `sap_transport_info` — get transport request info for an object\n");
         sb.append("- `sap_create_transport` — create a new transport request\n");
+        sb.append("- `sap_delete_object` — delete one or more ABAP objects (supports mass deletion)\n");
         sb.append("- `sap_atc_run` — run ATC quality checks (only when explicitly requested)\n");
         sb.append("- `sap_run_unit_test` — execute ABAP Unit tests for a class\n");
         if (hasResearchTool) {

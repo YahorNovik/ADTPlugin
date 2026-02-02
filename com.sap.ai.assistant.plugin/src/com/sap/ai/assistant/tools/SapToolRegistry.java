@@ -82,6 +82,7 @@ public class SapToolRegistry {
         register(map, new BehaviorDefinitionTool(client));
         register(map, new MetadataExtensionTool(client));
         register(map, new CreateTransportTool(client));
+        register(map, new DeleteObjectTool(client));
 
         for (SapTool tool : additionalTools) {
             register(map, tool);
