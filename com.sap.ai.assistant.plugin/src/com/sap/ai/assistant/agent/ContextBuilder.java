@@ -64,46 +64,9 @@ public class ContextBuilder {
         sb.append("3. The `functionGroup` parameter is REQUIRED for FUGR/FF — without it, the tool will return an error\n");
         sb.append("4. Source URL for function modules: `/sap/bc/adt/functions/groups/{group}/fmodules/{fm_name}/source/main`\n\n");
 
-        // -- Tool reference --
-        sb.append("## Tool Reference\n\n");
-        sb.append("**Reading:**\n");
-        sb.append("- `sap_search_object` — search for ABAP objects by name pattern and type\n");
-        sb.append("- `sap_get_source` — read source code of a program, class, interface, or function module\n");
-        sb.append("- `sap_object_structure` — get the structure/hierarchy of an ABAP object (methods, includes, etc.)\n");
-        sb.append("- `sap_node_contents` — list children of a package or namespace\n");
-        sb.append("- `sap_find_definition` — navigate to where a symbol (class, method, type, variable) is defined\n");
-        sb.append("- `sap_usage_references` — find all places where a symbol is used (where-used list)\n");
-        sb.append("- `sap_sql_query` — execute ABAP SQL queries and preview table data\n");
-        sb.append("- `sap_type_info` — get DDIC type info (data elements, domains, table types)\n");
-        sb.append("- `sap_get_includes` — list includes of a program, class, or function group\n");
-        sb.append("- `sap_get_enhancements` — find enhancement spots and BAdI definitions\n");
-        sb.append("- `sap_get_transaction` — look up transaction code details\n");
-        sb.append("- `sap_inactive_objects` — list objects pending activation\n\n");
-        sb.append("**Writing (ABAP):**\n");
-        sb.append("- `sap_syntax_check` — check syntax of source code; use `content` param to check inline without saving\n");
-        sb.append("- `sap_write_and_check` — create a NEW program/class/interface/function module and write source in one step (for FUGR/FF, pass `functionGroup`)\n");
-        sb.append("- `sap_set_source` — write source to an EXISTING object\n");
-        sb.append("- `sap_create_object` — create an empty object without source (for FUGR/FF, pass `functionGroup`; prefer `sap_write_and_check`)\n");
-        sb.append("- `sap_activate` — activate an object (only call manually if auto-activation was skipped)\n\n");
-        sb.append("**Writing (DDIC / CDS / RAP):**\n");
-        sb.append("- `sap_ddic_table` — create or update a DDIC table definition (DDL source)\n");
-        sb.append("- `sap_ddic_structure` — create or update a DDIC structure (DDL source)\n");
-        sb.append("- `sap_ddic_cds_view` — create or update a CDS view definition\n");
-        sb.append("- `sap_ddic_data_element` — create or update a data element\n");
-        sb.append("- `sap_ddic_domain` — create or update a domain\n");
-        sb.append("- `sap_service_definition` — create or update a RAP service definition\n");
-        sb.append("- `sap_behavior_definition` — create or update a RAP behavior definition\n");
-        sb.append("- `sap_metadata_extension` — create or update a CDS metadata extension\n\n");
-        sb.append("**Other:**\n");
-        sb.append("- `sap_transport_info` — get transport request info for an object\n");
-        sb.append("- `sap_create_transport` — create a new transport request\n");
-        sb.append("- `sap_delete_object` — delete one or more ABAP objects (supports mass deletion)\n");
-        sb.append("- `sap_atc_run` — run ATC quality checks (only when explicitly requested)\n");
-        sb.append("- `sap_run_unit_test` — execute ABAP Unit tests for a class\n");
-        if (hasResearchTool) {
-            sb.append("- `research` — delegate a query to a research sub-agent that can search SAP documentation, ABAP keyword reference, and read object source code\n");
-        }
-        sb.append("\n");
+        // NOTE: Tool descriptions are NOT listed here — they are already sent
+        // via the API's `tools` parameter. Listing them here would duplicate
+        // ~800-1000 tokens on every request.
 
         // -- Output style instruction --
         sb.append("## Response Style\n\n");
