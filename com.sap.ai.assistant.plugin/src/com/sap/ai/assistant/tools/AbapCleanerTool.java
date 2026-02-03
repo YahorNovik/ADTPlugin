@@ -1,6 +1,8 @@
 package com.sap.ai.assistant.tools;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
@@ -98,8 +100,12 @@ public class AbapCleanerTool implements SapTool {
     public ToolResult execute(JsonObject arguments) throws Exception {
         if (!isAvailable) {
             return ToolResult.error(null,
-                    "ABAP Cleaner is not installed. Please install it from: "
-                    + "https://github.com/SAP/abap-cleaner");
+                    "ABAP Cleaner is not installed. To enable automated code cleanup:\n\n"
+                    + "1. In Eclipse: Help → Install New Software\n"
+                    + "2. Add update site: https://sap.github.io/abap-cleaner/updatesite\n"
+                    + "3. Select 'ABAP Cleaner' and complete installation\n"
+                    + "4. Restart Eclipse\n\n"
+                    + "More info: https://github.com/SAP/abap-cleaner");
         }
 
         String sourceCode = null;
@@ -156,15 +162,8 @@ public class AbapCleanerTool implements SapTool {
         Method parseMethod = codeClass.getMethod("parse", iProgressClass, parseParamsClass);
         Object code = parseMethod.invoke(null, null, parseParams);
 
-        // Create profile: Profile.createDefault() or Profile.createEssential()
-        Object profile;
-        if (PROFILE_ESSENTIAL.equalsIgnoreCase(profileName)) {
-            Method createEssential = profileClass.getMethod("createEssential");
-            profile = createEssential.invoke(null);
-        } else {
-            Method createDefault = profileClass.getMethod("createDefault");
-            profile = createDefault.invoke(null);
-        }
+        // Get or create profile
+        Object profile = getOrCreateProfile(profileClass, profileName);
 
         // Get all rules from profile
         Method getRules = profileClass.getMethod("getAllRules");
@@ -186,6 +185,119 @@ public class AbapCleanerTool implements SapTool {
         return (String) toStringMethod.invoke(code);
     }
 
+    /**
+     * Gets or creates a profile by name.
+     * For "default" and "essential", uses built-in factory methods.
+     * For custom names, tries to load from ABAP Cleaner's profile directory.
+     */
+    private Object getOrCreateProfile(Class<?> profileClass, String profileName) throws Exception {
+        // Handle built-in profiles
+        if (PROFILE_DEFAULT.equalsIgnoreCase(profileName)) {
+            Method createDefault = profileClass.getMethod("createDefault");
+            return createDefault.invoke(null);
+        }
+        if (PROFILE_ESSENTIAL.equalsIgnoreCase(profileName)) {
+            Method createEssential = profileClass.getMethod("createEssential");
+            return createEssential.invoke(null);
+        }
+
+        // Try to load custom profile from ABAP Cleaner's profile directory
+        Object customProfile = loadProfileByName(profileClass, profileName);
+        if (customProfile != null) {
+            return customProfile;
+        }
+
+        // Fall back to default if custom profile not found
+        Method createDefault = profileClass.getMethod("createDefault");
+        return createDefault.invoke(null);
+    }
+
+    /**
+     * Loads a profile by name from ABAP Cleaner's profile directories.
+     * Returns null if the profile is not found.
+     */
+    @SuppressWarnings("unchecked")
+    private Object loadProfileByName(Class<?> profileClass, String profileName) {
+        try {
+            // Get Persistency class and instance
+            Class<?> persistencyClass = getCleanerClass("com.sap.adt.abapcleaner.base.Persistency");
+            Method getInstance = persistencyClass.getMethod("get");
+            Object persistency = getInstance.invoke(null);
+
+            // Get profile directory from Persistency
+            Class<?> fileTypeClass = getCleanerClass("com.sap.adt.abapcleaner.base.FileType");
+            Object profileTextType = fileTypeClass.getField("PROFILE_TEXT").get(null);
+            Method getDirectoryPath = persistencyClass.getMethod("getDirectoryPath", fileTypeClass);
+            String profileDir = (String) getDirectoryPath.invoke(persistency, profileTextType);
+
+            // Get read-only profile directories (team profiles)
+            Class<?> profileDirClass = getCleanerClass("com.sap.adt.abapcleaner.rulebase.ProfileDir");
+            Method getReadOnlyDirs = persistencyClass.getMethod("getReadOnlyProfileDirs");
+            Object readOnlyDirs = getReadOnlyDirs.invoke(persistency);
+
+            // Load all profiles
+            StringBuilder errors = new StringBuilder();
+            Method loadProfiles = profileClass.getMethod("loadProfiles",
+                    String.class, ArrayList.class, StringBuilder.class);
+            List<?> profiles = (List<?>) loadProfiles.invoke(null, profileDir, readOnlyDirs, errors);
+
+            // Find profile by name (case-insensitive)
+            Method getName = profileClass.getMethod("getName");
+            for (Object profile : profiles) {
+                String name = (String) getName.invoke(profile);
+                if (profileName.equalsIgnoreCase(name)) {
+                    return profile;
+                }
+            }
+        } catch (Exception e) {
+            // Could not load profiles, will fall back to default
+        }
+        return null;
+    }
+
+    /**
+     * Lists all available profile names from ABAP Cleaner.
+     * Useful for providing suggestions to the user.
+     */
+    @SuppressWarnings("unchecked")
+    public static List<String> getAvailableProfiles() {
+        List<String> names = new ArrayList<>();
+        names.add(PROFILE_DEFAULT);
+        names.add(PROFILE_ESSENTIAL);
+
+        try {
+            Class<?> profileClass = getCleanerClass("com.sap.adt.abapcleaner.rulebase.Profile");
+            Class<?> persistencyClass = getCleanerClass("com.sap.adt.abapcleaner.base.Persistency");
+
+            Method getInstance = persistencyClass.getMethod("get");
+            Object persistency = getInstance.invoke(null);
+
+            Class<?> fileTypeClass = getCleanerClass("com.sap.adt.abapcleaner.base.FileType");
+            Object profileTextType = fileTypeClass.getField("PROFILE_TEXT").get(null);
+            Method getDirectoryPath = persistencyClass.getMethod("getDirectoryPath", fileTypeClass);
+            String profileDir = (String) getDirectoryPath.invoke(persistency, profileTextType);
+
+            Method getReadOnlyDirs = persistencyClass.getMethod("getReadOnlyProfileDirs");
+            Object readOnlyDirs = getReadOnlyDirs.invoke(persistency);
+
+            StringBuilder errors = new StringBuilder();
+            Method loadProfiles = profileClass.getMethod("loadProfiles",
+                    String.class, ArrayList.class, StringBuilder.class);
+            List<?> profiles = (List<?>) loadProfiles.invoke(null, profileDir, readOnlyDirs, errors);
+
+            Method getName = profileClass.getMethod("getName");
+            for (Object profile : profiles) {
+                String name = (String) getName.invoke(profile);
+                if (!names.contains(name)) {
+                    names.add(name);
+                }
+            }
+        } catch (Exception e) {
+            // Could not load profiles
+        }
+        return names;
+    }
+
     private static ToolDefinition buildDefinition() {
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
@@ -202,13 +314,10 @@ public class AbapCleanerTool implements SapTool {
         // profile parameter
         JsonObject profileProp = new JsonObject();
         profileProp.addProperty("type", "string");
-        JsonArray profileEnum = new JsonArray();
-        profileEnum.add("default");
-        profileEnum.add("essential");
-        profileProp.add("enum", profileEnum);
         profileProp.addProperty("description",
-                "The cleanup profile to use. 'default' applies all ~100 rules. "
-                + "'essential' applies ~40% of rules from Clean ABAP Styleguide only.");
+                "The cleanup profile name. Built-in: 'default' (all ~100 rules), "
+                + "'essential' (~40% core rules). Can also use custom profile names "
+                + "configured in ABAP Cleaner (e.g., 'team A: myprofile').");
         properties.add("profile", profileProp);
 
         // abapRelease parameter
