@@ -94,6 +94,36 @@ public class ChatMessage {
         }
     }
 
+    /**
+     * Creates a copy of this message with truncated tool results.
+     * Used to reduce token usage for older tool results in the conversation.
+     *
+     * @param maxLen maximum length for each tool result content
+     * @return a new ChatMessage with truncated tool results, or this instance if no truncation needed
+     */
+    public ChatMessage withTruncatedToolResults(int maxLen) {
+        if (toolResults.isEmpty()) {
+            return this;
+        }
+        boolean needsTruncation = false;
+        for (ToolResult tr : toolResults) {
+            if (tr.getContent() != null && tr.getContent().length() > maxLen) {
+                needsTruncation = true;
+                break;
+            }
+        }
+        if (!needsTruncation) {
+            return this;
+        }
+        List<ToolResult> truncated = new ArrayList<>();
+        for (ToolResult tr : toolResults) {
+            truncated.add(tr.truncated(maxLen));
+        }
+        ChatMessage msg = new ChatMessage(role, textContent, toolCalls, truncated);
+        msg.setUsage(usage);
+        return msg;
+    }
+
     // -- Getters -----------------------------------------------------------------
 
     public Role getRole() {

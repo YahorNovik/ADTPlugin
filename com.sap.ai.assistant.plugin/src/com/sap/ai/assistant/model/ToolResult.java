@@ -61,6 +61,21 @@ public class ToolResult {
         return isError;
     }
 
+    /**
+     * Creates a truncated copy of this tool result if the content exceeds maxLen.
+     *
+     * @param maxLen maximum content length
+     * @return a new truncated ToolResult, or this instance if already short enough
+     */
+    public ToolResult truncated(int maxLen) {
+        if (content == null || content.length() <= maxLen) {
+            return this;
+        }
+        String truncatedContent = content.substring(0, maxLen)
+                + "\n...[truncated from " + content.length() + " chars]";
+        return new ToolResult(toolCallId, truncatedContent, isError);
+    }
+
     @Override
     public String toString() {
         return "ToolResult{toolCallId='" + toolCallId + "', isError=" + isError

@@ -125,6 +125,54 @@ public class ChatConversation {
      */
     public void trimMessages() {
         trimMessages(DEFAULT_MAX_MESSAGES);
+        truncateOldToolResults();
+    }
+
+    /**
+     * Default maximum length for tool result content before truncation.
+     * Keeps enough context for the LLM to understand what was returned.
+     */
+    public static final int DEFAULT_TOOL_RESULT_MAX_LEN = 2000;
+
+    /**
+     * Truncates tool result content in older messages to reduce token usage.
+     * The most recent tool results message is kept full; older ones are truncated.
+     *
+     * @param maxLen maximum length for each tool result content
+     */
+    public void truncateOldToolResults(int maxLen) {
+        if (messages.size() < 2) {
+            return;
+        }
+
+        // Find the index of the last TOOL message (most recent tool results)
+        int lastToolIndex = -1;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i).getRole() == ChatMessage.Role.TOOL) {
+                lastToolIndex = i;
+                break;
+            }
+        }
+
+        // Truncate all TOOL messages except the most recent one
+        for (int i = 0; i < messages.size(); i++) {
+            ChatMessage msg = messages.get(i);
+            if (msg.getRole() == ChatMessage.Role.TOOL && i != lastToolIndex) {
+                ChatMessage truncated = msg.withTruncatedToolResults(maxLen);
+                if (truncated != msg) {
+                    messages.set(i, truncated);
+                }
+            }
+        }
+    }
+
+    /**
+     * Truncates old tool results using the default maximum length.
+     *
+     * @see #truncateOldToolResults(int)
+     */
+    public void truncateOldToolResults() {
+        truncateOldToolResults(DEFAULT_TOOL_RESULT_MAX_LEN);
     }
 
     // -- Getters / Setters -------------------------------------------------------
