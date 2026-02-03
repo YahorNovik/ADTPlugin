@@ -1,6 +1,9 @@
 package com.sap.ai.assistant.mcp;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.sap.ai.assistant.model.ToolDefinition;
 import com.sap.ai.assistant.model.ToolResult;
 import com.sap.ai.assistant.tools.SapTool;
@@ -44,13 +47,54 @@ public class McpToolAdapter implements SapTool {
         return definition;
     }
 
+    /** Maximum number of search results to return (to reduce token usage). */
+    private static final int MAX_SEARCH_RESULTS = 10;
+
     @Override
     public ToolResult execute(JsonObject arguments) throws Exception {
         try {
             String result = client.callTool(mcpToolName, arguments);
+            // Truncate search results to reduce token usage
+            result = truncateSearchResults(result);
             return ToolResult.success(null, result);
         } catch (McpException e) {
             return ToolResult.error(null, "MCP tool error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Truncates search results to MAX_SEARCH_RESULTS to reduce token usage.
+     * If the result is a JSON object with a "results" array, only keep the first N items.
+     */
+    private String truncateSearchResults(String result) {
+        if (result == null || result.isEmpty()) {
+            return result;
+        }
+        try {
+            JsonElement parsed = JsonParser.parseString(result);
+            if (!parsed.isJsonObject()) {
+                return result;
+            }
+            JsonObject obj = parsed.getAsJsonObject();
+            if (!obj.has("results") || !obj.get("results").isJsonArray()) {
+                return result;
+            }
+            JsonArray results = obj.getAsJsonArray("results");
+            if (results.size() <= MAX_SEARCH_RESULTS) {
+                return result;
+            }
+            // Truncate to MAX_SEARCH_RESULTS
+            JsonArray truncated = new JsonArray();
+            for (int i = 0; i < MAX_SEARCH_RESULTS && i < results.size(); i++) {
+                truncated.add(results.get(i));
+            }
+            obj.add("results", truncated);
+            obj.addProperty("truncated", true);
+            obj.addProperty("totalResults", results.size());
+            return obj.toString();
+        } catch (Exception e) {
+            // If parsing fails, return original result
+            return result;
         }
     }
 

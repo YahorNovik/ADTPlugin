@@ -173,16 +173,14 @@ public class ContextBuilder {
             sb.append("IMPORTANT: If you encounter a syntax error you cannot fix after one attempt, ");
             sb.append("use the `research` tool to look up the correct ABAP syntax before trying again.\n");
             sb.append("The research sub-agent has access to SAP read tools and documentation tools ");
-            sb.append("(SAP Help Portal, SAP Community, SAPUI5/CAP docs).\n\n");
+            sb.append("(SAP Help Portal, SAP Community).\n\n");
         } else {
             sb.append("## SAP Documentation (MCP Tools)\n\n");
             sb.append("Use these tools to look up SAP documentation:\n");
             sb.append("- `mcp_sap_help_search` — search SAP Help Portal (ABAP keyword reference, ");
             sb.append("transactions, BAdIs, configuration)\n");
             sb.append("- `mcp_sap_help_get` — fetch full SAP Help page content\n");
-            sb.append("- `mcp_sap_community_search` — search SAP Community for blog posts and solutions\n");
-            sb.append("- `mcp_sap_docs_search` — search SAPUI5, CAP, and OpenUI5 documentation\n");
-            sb.append("- `mcp_sap_docs_get` — fetch full documentation page content\n\n");
+            sb.append("- `mcp_sap_community_search` — search SAP Community for blog posts and solutions\n\n");
             sb.append("**Workflow**: Search first, then fetch full content for relevant results.\n\n");
         }
 

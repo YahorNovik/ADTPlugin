@@ -410,6 +410,7 @@ public class AiAssistantView extends ViewPart {
                     LlmProvider llmProvider = LlmProviderFactory.create(finalConfig);
 
                     // Connect to MCP servers and discover tools
+                    // Only include ABAP-relevant tools (exclude CAP, UI5, OpenUI5, etc.)
                     List<SapTool> mcpTools = new ArrayList<>();
                     for (McpServerConfig mcpConfig : mcpConfigs) {
                         if (!mcpConfig.isEnabled()) continue;
@@ -421,12 +422,17 @@ public class AiAssistantView extends ViewPart {
                             List<JsonObject> rawTools = mcpClient.listTools();
                             List<ToolDefinition> defs = McpToolDefinitionParser.parse(rawTools);
 
+                            int loadedCount = 0;
                             for (int i = 0; i < rawTools.size(); i++) {
                                 String originalName = rawTools.get(i).get("name").getAsString();
-                                mcpTools.add(new McpToolAdapter(mcpClient, originalName, defs.get(i)));
+                                // Filter: only include ABAP-related tools
+                                if (isAbapRelevantMcpTool(originalName)) {
+                                    mcpTools.add(new McpToolAdapter(mcpClient, originalName, defs.get(i)));
+                                    loadedCount++;
+                                }
                             }
-                            System.out.println("MCP: Loaded " + rawTools.size()
-                                    + " tools from " + mcpConfig.getName());
+                            System.out.println("MCP: Loaded " + loadedCount + " ABAP tools from "
+                                    + mcpConfig.getName() + " (filtered from " + rawTools.size() + " total)");
                         } catch (Exception e) {
                             System.err.println("MCP: Failed to connect to "
                                     + mcpConfig.getName() + ": " + e.getMessage());
@@ -784,5 +790,40 @@ public class AiAssistantView extends ViewPart {
         }
         modelLabel.setText(display);
         modelLabel.requestLayout();
+    }
+
+    /**
+     * Returns true if the MCP tool is relevant for ABAP development.
+     * Filters out CAP, UI5, OpenUI5, and other non-ABAP tools.
+     */
+    private static boolean isAbapRelevantMcpTool(String toolName) {
+        if (toolName == null) return false;
+        String lower = toolName.toLowerCase();
+
+        // Include: ABAP help, SAP help, SAP community
+        if (lower.contains("sap_help") || lower.contains("abap")) {
+            return true;
+        }
+        if (lower.contains("sap_community")) {
+            return true;
+        }
+
+        // Exclude: CAP, UI5, OpenUI5, Cloud SDK, wdi5
+        if (lower.contains("cap") || lower.contains("ui5") || lower.contains("openui5")) {
+            return false;
+        }
+        if (lower.contains("cloud_sdk") || lower.contains("cloudsdk")) {
+            return false;
+        }
+        if (lower.contains("wdi5") || lower.contains("fiori")) {
+            return false;
+        }
+
+        // Include generic search/get if not explicitly excluded
+        if (lower.equals("search") || lower.equals("get")) {
+            return false; // Too generic, prefer specific tools
+        }
+
+        return true;
     }
 }
