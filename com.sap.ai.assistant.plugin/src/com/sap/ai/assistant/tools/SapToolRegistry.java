@@ -88,6 +88,11 @@ public class SapToolRegistry {
         register(map, new ReadGuidelinesTool());
         register(map, new UpdateGuidelinesTool());
 
+        // ABAP Cleaner tool (only if ABAP Cleaner is installed)
+        if (AbapCleanerTool.isAbapCleanerAvailable()) {
+            register(map, new AbapCleanerTool());
+        }
+
         for (SapTool tool : additionalTools) {
             register(map, tool);
         }
