@@ -50,6 +50,7 @@ public class AiAssistantPreferencePage extends PreferencePage
     private Combo modelCombo;
     private Combo researchModelCombo;
     private Spinner maxTokensSpinner;
+    private Spinner maxInputTokensSpinner;
     private Button includeContextCheck;
     private Table sapSystemsTable;
     private List<SavedSapSystem> savedSapSystems = new ArrayList<>();
@@ -123,14 +124,25 @@ public class AiAssistantPreferencePage extends PreferencePage
         researchModelCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         researchModelCombo.setToolTipText("Model used by the research sub-agent (can be a cheaper/faster model)");
 
-        // Max Tokens
-        new Label(llmGroup, SWT.NONE).setText("Max Tokens:");
+        // Max Tokens (output)
+        new Label(llmGroup, SWT.NONE).setText("Max Response Tokens:");
         maxTokensSpinner = new Spinner(llmGroup, SWT.BORDER);
         maxTokensSpinner.setMinimum(256);
         maxTokensSpinner.setMaximum(128000);
         maxTokensSpinner.setIncrement(1024);
         maxTokensSpinner.setPageIncrement(4096);
         maxTokensSpinner.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        maxTokensSpinner.setToolTipText("Maximum tokens per LLM response");
+
+        // Max Input Tokens (budget)
+        new Label(llmGroup, SWT.NONE).setText("Token Budget:");
+        maxInputTokensSpinner = new Spinner(llmGroup, SWT.BORDER);
+        maxInputTokensSpinner.setMinimum(10000);
+        maxInputTokensSpinner.setMaximum(500000);
+        maxInputTokensSpinner.setIncrement(10000);
+        maxInputTokensSpinner.setPageIncrement(50000);
+        maxInputTokensSpinner.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        maxInputTokensSpinner.setToolTipText("Maximum cumulative input tokens per agent run (budget limit)");
 
         // -- Behaviour group --
         Group behaviourGroup = new Group(container, SWT.NONE);
@@ -448,9 +460,13 @@ public class AiAssistantPreferencePage extends PreferencePage
         String apiKey = store.getString(PreferenceConstants.LLM_API_KEY);
         apiKeyText.setText(apiKey != null ? apiKey : "");
 
-        // Max Tokens
+        // Max Tokens (output)
         int maxTokens = store.getInt(PreferenceConstants.LLM_MAX_TOKENS);
         maxTokensSpinner.setSelection(maxTokens > 0 ? maxTokens : 8192);
+
+        // Max Input Tokens (budget)
+        int maxInputTokens = store.getInt(PreferenceConstants.LLM_MAX_INPUT_TOKENS);
+        maxInputTokensSpinner.setSelection(maxInputTokens > 0 ? maxInputTokens : 100000);
 
         // Include context
         includeContextCheck.setSelection(store.getBoolean(PreferenceConstants.INCLUDE_CONTEXT));
@@ -507,6 +523,7 @@ public class AiAssistantPreferencePage extends PreferencePage
         store.setValue(PreferenceConstants.RESEARCH_MODEL, researchModelCombo.getText());
         store.setValue(PreferenceConstants.LLM_BASE_URL, baseUrlText.getText());
         store.setValue(PreferenceConstants.LLM_MAX_TOKENS, maxTokensSpinner.getSelection());
+        store.setValue(PreferenceConstants.LLM_MAX_INPUT_TOKENS, maxInputTokensSpinner.getSelection());
         store.setValue(PreferenceConstants.INCLUDE_CONTEXT, includeContextCheck.getSelection());
 
         // Sync enabled state from table checkboxes
@@ -528,6 +545,7 @@ public class AiAssistantPreferencePage extends PreferencePage
         apiKeyText.setText("");
         baseUrlText.setText("");
         maxTokensSpinner.setSelection(8192);
+        maxInputTokensSpinner.setSelection(100000);
         includeContextCheck.setSelection(true);
 
         // Reset saved SAP systems

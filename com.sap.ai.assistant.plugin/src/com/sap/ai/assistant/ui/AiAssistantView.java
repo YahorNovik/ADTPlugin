@@ -272,6 +272,8 @@ public class AiAssistantView extends ViewPart {
         String model           = store.getString(PreferenceConstants.LLM_MODEL);
         String researchModel   = store.getString(PreferenceConstants.RESEARCH_MODEL);
         int maxTokens          = store.getInt(PreferenceConstants.LLM_MAX_TOKENS);
+        int maxInputTokens     = store.getInt(PreferenceConstants.LLM_MAX_INPUT_TOKENS);
+        if (maxInputTokens <= 0) maxInputTokens = 100000; // Default if not set
 
         // Validate API key
         if (apiKey == null || apiKey.trim().isEmpty()) {
@@ -390,6 +392,7 @@ public class AiAssistantView extends ViewPart {
         final List<AdtContext> finalEditorContexts = selectedContexts;
         final AdtCredentialProvider.AdtSessionData finalAdtSession = adtSessionData;
         final AgentMode finalAgentMode = selectedAgentMode;
+        final int finalMaxInputTokens = maxInputTokens;
 
         // Read MCP server configs
         String mcpServersJson = store.getString(PreferenceConstants.MCP_SERVERS);
@@ -584,7 +587,8 @@ public class AiAssistantView extends ViewPart {
                         finalConversation.setSystemPrompt(researchPrompt);
 
                         AgentLoop researchAgent = new AgentLoop(
-                                researchLlm, researchRegistry, restClient, finalResearchConfig);
+                                researchLlm, researchRegistry, restClient, finalResearchConfig,
+                                AgentLoop.DEFAULT_MAX_TOOL_ROUNDS, finalMaxInputTokens);
                         researchAgent.run(finalConversation, agentCallback);
                         return Status.OK_STATUS;
                     }
@@ -609,7 +613,8 @@ public class AiAssistantView extends ViewPart {
                         finalConversation.setSystemPrompt(reviewPrompt);
 
                         AgentLoop reviewAgent = new AgentLoop(
-                                reviewLlm, reviewRegistry, restClient, finalResearchConfig);
+                                reviewLlm, reviewRegistry, restClient, finalResearchConfig,
+                                AgentLoop.DEFAULT_MAX_TOOL_ROUNDS, finalMaxInputTokens);
                         reviewAgent.run(finalConversation, agentCallback);
                         return Status.OK_STATUS;
                     }
@@ -635,7 +640,8 @@ public class AiAssistantView extends ViewPart {
                             sessionTransport);
                     finalConversation.setSystemPrompt(updatedPrompt);
 
-                    AgentLoop agent = new AgentLoop(llmProvider, toolRegistry, restClient, finalConfig);
+                    AgentLoop agent = new AgentLoop(llmProvider, toolRegistry, restClient, finalConfig,
+                            AgentLoop.DEFAULT_MAX_TOOL_ROUNDS, finalMaxInputTokens);
                     agent.setSessionTransport(sessionTransport);
                     agent.run(finalConversation, agentCallback);
 

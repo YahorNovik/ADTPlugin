@@ -59,8 +59,15 @@ public class AgentLoop {
     /**
      * Default maximum cumulative input tokens across all rounds of a single agent run.
      * When exceeded the loop stops and returns a budget-exceeded message to the user.
+     * Set to 100K to allow complex multi-round tasks (most models support 128K-200K+).
      */
-    public static final int DEFAULT_MAX_INPUT_TOKENS = 50_000;
+    public static final int DEFAULT_MAX_INPUT_TOKENS = 100_000;
+
+    /**
+     * Threshold (as fraction of maxInputTokens) at which aggressive compression triggers.
+     * Following industry patterns (GitHub Copilot CLI uses 95%, we use 80% for safety).
+     */
+    private static final double COMPRESSION_THRESHOLD = 0.80;
 
     /** Pattern to extract the human-readable message from SAP ADT XML exceptions. */
     private static final Pattern SAP_XML_MESSAGE_PATTERN =
@@ -279,7 +286,16 @@ public class AgentLoop {
                 ChatMessage toolResultsMessage = ChatMessage.toolResults(results);
                 conversation.addAssistantMessage(toolResultsMessage);
 
-                // 6. Check token budget
+                // 6. Check token budget and apply compression if approaching limit
+                int compressionThreshold = (int) (maxInputTokens * COMPRESSION_THRESHOLD);
+                if (cumulativeInputTokens > compressionThreshold) {
+                    // Approaching limit - apply aggressive compression
+                    System.out.println("AgentLoop: approaching token limit ("
+                            + cumulativeInputTokens + " / " + maxInputTokens
+                            + "), applying aggressive compression.");
+                    conversation.truncateOldToolResults(1000); // More aggressive: 1000 chars
+                }
+
                 if (cumulativeInputTokens > maxInputTokens) {
                     System.err.println("AgentLoop: token budget exceeded ("
                             + cumulativeInputTokens + " > " + maxInputTokens + "), stopping.");

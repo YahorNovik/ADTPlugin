@@ -24,6 +24,9 @@ public final class PreferenceConstants {
     /** Maximum number of response tokens (256 - 128 000). */
     public static final String LLM_MAX_TOKENS = "com.sap.ai.assistant.llm.maxTokens";
 
+    /** Maximum cumulative input tokens per agent run (token budget). */
+    public static final String LLM_MAX_INPUT_TOKENS = "com.sap.ai.assistant.llm.maxInputTokens";
+
     /** Whether to include the current editor context in prompts. */
     public static final String INCLUDE_CONTEXT = "com.sap.ai.assistant.includeContext";
 
