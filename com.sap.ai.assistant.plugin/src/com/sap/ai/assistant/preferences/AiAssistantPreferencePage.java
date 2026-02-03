@@ -463,6 +463,11 @@ public class AiAssistantPreferencePage extends PreferencePage
         // MCP Servers
         String mcpJson = store.getString(PreferenceConstants.MCP_SERVERS);
         mcpServers = McpServerConfig.fromJson(mcpJson);
+        // Populate default if empty (for existing installations without MCP config)
+        if (mcpServers.isEmpty()) {
+            mcpServers.add(new McpServerConfig("SAP Docs",
+                    "https://mcp-sap-docs.marianzeis.de/mcp", true));
+        }
         refreshMcpTable();
     }
 
@@ -727,7 +732,12 @@ public class AiAssistantPreferencePage extends PreferencePage
 
     private void handleMcpTest() {
         int idx = mcpTable.getSelectionIndex();
-        if (idx < 0 || idx >= mcpServers.size()) return;
+        if (idx < 0 || idx >= mcpServers.size()) {
+            org.eclipse.jface.dialogs.MessageDialog.openWarning(
+                    getShell(), "MCP Connection Test",
+                    "Please select a server from the list first.");
+            return;
+        }
 
         McpServerConfig cfg = mcpServers.get(idx);
         try {

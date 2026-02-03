@@ -92,16 +92,22 @@ public final class ToolSchemaConverter {
     /**
      * Recursively converts a JSON Schema object so that all {@code "type"} values
      * use UPPERCASE names as required by the Gemini API (e.g. "string" becomes
-     * "STRING", "object" becomes "OBJECT").
+     * "STRING", "object" becomes "OBJECT"). Also strips unsupported fields like
+     * "examples", "$schema", "additionalProperties", etc.
      *
      * @param schema the original JSON Schema object
-     * @return a new JSON object with upper-cased type values
+     * @return a new JSON object with upper-cased type values and unsupported fields removed
      */
     public static JsonObject toGeminiSchema(JsonObject schema) {
         JsonObject result = new JsonObject();
         for (Map.Entry<String, JsonElement> entry : schema.entrySet()) {
             String key = entry.getKey();
             JsonElement value = entry.getValue();
+
+            // Skip fields not supported by Gemini
+            if (isUnsupportedGeminiField(key)) {
+                continue;
+            }
 
             if ("type".equals(key) && value.isJsonPrimitive()) {
                 // Convert type names to UPPERCASE
@@ -126,5 +132,26 @@ public final class ToolSchemaConverter {
             }
         }
         return result;
+    }
+
+    /**
+     * Returns true if the given JSON Schema field is not supported by Gemini's
+     * function declaration format.
+     */
+    private static boolean isUnsupportedGeminiField(String fieldName) {
+        switch (fieldName) {
+            case "examples":
+            case "$schema":
+            case "additionalProperties":
+            case "default":
+            case "title":
+            case "$id":
+            case "$ref":
+            case "definitions":
+            case "$defs":
+                return true;
+            default:
+                return false;
+        }
     }
 }
